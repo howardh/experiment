@@ -5,5 +5,5 @@ setup(name='experiment',
     description='Tools for running experiments.',
     author='Howard Huang',
     packages=['experiment'],
-    install_requires=['dill'],
+    install_requires=['dill','tqdm','matplotlib','scipy'],
 )
