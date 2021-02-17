@@ -47,6 +47,15 @@ class Logger:
                     raise Exception('Key "%s" already exists for this iteration.' % k)
             self.data[-1][k] = v
             
+    def mean(self, key):
+        total = 0
+        count = 0
+        for d in self.data:
+            if key in d:
+                total += d[key]
+                count += 1
+        return total/count
+
     def state_dict(self):
         return {
                 'data': self.data,
