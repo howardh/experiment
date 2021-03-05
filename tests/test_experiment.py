@@ -9,15 +9,19 @@ def test_find_next_free_file_concurrency(tmpdir):
     pass
 
 class DummyExp(Experiment):
-    def setup(self, config):
+    def setup(self, config, output_directory=None):
         self.logger = Logger()
         self.rng = np.random.default_rng()
     def run_step(self,iteration):
         self.logger.log(val=self.rng.random())
     def state_dict(self):
-        return { 'rng': self.rng.bit_generator.state, 'logger': self.logger.state_dict() }
+        return {
+                'rng': self.rng.bit_generator.state,
+                'logger': self.logger.state_dict()
+        }
     def load_state_dict(self,state):
-        self.rng.bit_generator.state = state.get('rng')
+        self.rng.bit_generator.state = state['rng']
+        self.logger.load_state_dict(state['logger'])
 
 class DummyExpInterrupt(DummyExp):
     def run_step(self,iteration):
@@ -31,44 +35,37 @@ def test_experiment_runs_without_error():
 
 def test_checkpoint_created(tmpdir):
     """ If an experiment is interrupted, then the checkpoint should still be in the checkpoint directory. """
-    checkpoint_dir = tmpdir.mkdir('checkpoints')
-    results_dir = tmpdir.mkdir('results')
-    assert len(checkpoint_dir.listdir()) == 0
-    assert len(results_dir.listdir()) == 0
+    root_dir = tmpdir.mkdir('results')
+    assert len(root_dir.listdir()) == 0
 
-    exp = ExperimentRunner(DummyExpInterrupt, max_iterations=10, checkpoint_directory=checkpoint_dir, results_directory=results_dir)
+    exp = ExperimentRunner(DummyExpInterrupt, max_iterations=10, root_directory=root_dir)
     exp.run()
 
-    assert len(results_dir.listdir()) == 0
-    assert len(checkpoint_dir.listdir()) == 1
+    assert len(root_dir.listdir()) == 1
 
 def test_results_saved(tmpdir):
     """ In an experiment finishes, then the results should be in the results directory. """
-    checkpoint_dir = tmpdir.mkdir('checkpoints')
-    results_dir = tmpdir.mkdir('results')
-    assert len(checkpoint_dir.listdir()) == 0
-    assert len(results_dir.listdir()) == 0
+    root_dir = tmpdir.mkdir('results')
+    assert len(root_dir.listdir()) == 0
 
-    exp = ExperimentRunner(DummyExp, max_iterations=10, checkpoint_directory=checkpoint_dir, results_directory=results_dir)
+    exp = ExperimentRunner(DummyExp, max_iterations=10, root_directory=root_dir)
     exp.run()
 
-    assert len(results_dir.listdir()) == 1
-    assert len(checkpoint_dir.listdir()) == 0
+    assert len(root_dir.listdir()) == 1
 
 def test_load_checkpoint(tmpdir):
-    checkpoint_dir = tmpdir.mkdir('checkpoints')
-    results_dir = tmpdir.mkdir('results')
+    root_dir = tmpdir.mkdir('results')
+    assert len(root_dir.listdir()) == 0
 
-    exp = ExperimentRunner(DummyExpInterrupt, max_iterations=10, checkpoint_directory=checkpoint_dir, results_directory=results_dir)
+    exp = ExperimentRunner(
+            DummyExp, max_iterations=10, root_directory=root_dir
+    )
     exp.run()
 
-    assert len(results_dir.listdir()) == 0
-    assert len(checkpoint_dir.listdir()) == 1
+    assert len(root_dir.listdir()) == 1, 'Checkpoint was not created'
 
-    exp2 = load_checkpoint(DummyExpInterrupt, checkpoint_dir.listdir()[0])
-    exp2.run()
+    exp2 = load_checkpoint(DummyExp, root_dir.listdir()[0])
+    exp2.run() # This should do nothing, since the experiment was already run
 
     assert exp2.state_dict() == exp.state_dict()
-
-    assert len(results_dir.listdir()) == 0
-    assert len(checkpoint_dir.listdir()) == 1
+    assert len(root_dir.listdir()) == 1

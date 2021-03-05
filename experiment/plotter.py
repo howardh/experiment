@@ -27,6 +27,7 @@ def get_xy_data(logger, key):
 
 from abc import ABC, abstractmethod
 class SeriesTransform(ABC):
+    """ Transform series data. """
     @abstractmethod
     def __call__(self,x,y):
         pass
@@ -97,14 +98,16 @@ class ComposeTransforms(SeriesTransform):
 def plot(logger, curves, filename, min_points=3):
     """
     Args:
-        logger:
+        logger (experiment.logger.Logger): `experiment.logger.Logger` object containing the data to be plotted.
         curves: A list that can contain either
+
             - The names of the keys of the `logger` data to be plotted in the y axis
             - Mappings where each element contains information for a single curve. The mapping can contain the following:
                 - key: Key of the value to plot in the y axis
                 - smooth_fn: A `SmoothingFunction` to apply to the data
-        filename: Where to save the plot image.
-        min_points: Minimum number of points to be plotted. If fewer data points are available, then do nothing.
+
+        filename (str): Where to save the plot image.
+        min_points (int): Minimum number of points to be plotted. If fewer data points are available, then do nothing.
     """
     if not isinstance(curves, collections.abc.Iterable):
         raise Exception('`curves` must be an iterable.')
