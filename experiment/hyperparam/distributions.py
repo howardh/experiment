@@ -34,17 +34,17 @@ class Constant(Distribution):
     def linspace(self):
         return [self.val]
 
-class Discrete(Distribution):
+class Categorical(Distribution):
     def __init__(self, vals):
         self.vals = vals
     def __len__(self):
         return len(self.vals)
     def __repr__(self):
-        return 'Discrete(%s)' % self.vals
+        return 'Categorical(%s)' % self.vals
     def sample(self):
         return np.random.choice(self.vals)
     def linspace(self):
-        return vals
+        return self.vals
 
 class Uniform(Distribution):
     def __init__(self, min_val, max_val, n=None):
@@ -64,22 +64,35 @@ class Uniform(Distribution):
     def linspace(self, n=None):
         if n is None:
             n = self.n
+        if n is None:
+            raise Exception('`n` not specified.')
         return np.linspace(self.min_val, self.max_val, n)
 
-class LogUniform(Distribution):
+class IntUniform(Uniform):
     def __init__(self, min_val, max_val, n=None):
-        self.min_val = np.log(min_val)
-        self.max_val = np.log(max_val)
-        self.n = n
+        super().__init__(min_val,max_val,n)
     def __len__(self):
         if self.n is None:
-            raise Exception('No length defined.')
+            return int(max_val-min_val)
         return self.n
     def __repr__(self):
-        return 'LogUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
+        return 'IntUniform(%f,%f,n=%s)' % (self.min_val, self.max_val, self.n)
     def sample(self):
-        return np.exp(np.random.rand()*(self.max_val-self.min_val)+self.min_val)
+        return int(super().sample())
     def linspace(self, n=None):
         if n is None:
             n = self.n
-        return np.exp(np.linspace(self.min_val, self.max_val, n))
+        if n is None:
+            return np.arange(self.min_val, self.max_val)
+        else:
+            return np.floor(np.linspace(self.min_val, self.max_val, n))
+
+class LogUniform(Uniform):
+    def __init__(self, min_val, max_val, n=None):
+        super().__init__(np.log(min_val),np.log(max_val),n)
+    def __repr__(self):
+        return 'LogUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
+    def sample(self):
+        return np.exp(super().sample())
+    def linspace(self, n=None):
+        return np.exp(super().linspace(n))

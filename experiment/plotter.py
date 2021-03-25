@@ -141,3 +141,4 @@ def plot(logger, curves, filename, min_points=3):
             x,y = get_xy_data(logger, k)
             plt.plot(x,y)
         plt.savefig(filename)
+    plt.close()

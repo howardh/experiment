@@ -10,7 +10,7 @@ from .utils import find_next_free_dir, find_next_free_file
 
 class Experiment(ABC):
     @abstractmethod
-    def setup(self, config):
+    def setup(self, config, output_directory=None):
         pass
     @abstractmethod
     def run_step(self,iteration):
@@ -98,20 +98,17 @@ class ExperimentRunner:
                 step_range = tqdm(step_range)
             else:
                 step_range = tqdm(step_range, total=self.max_iterations, initial=self.steps)
-        try:
-            for steps in step_range:
-                self.steps = steps
-                if steps % self.checkpoint_frequency == 0:
-                    self.save_checkpoint(self.checkpoint_file_path)
-                if steps % self.epoch == 0:
-                    self.exp.before_epoch(steps)
-                self.exp.run_step(steps)
-                if steps % self.epoch == 0:
-                    self.exp.after_epoch(steps)
-            # Save checkpoint
-            self.save_checkpoint(self.checkpoint_file_path)
-        except KeyboardInterrupt:
-            pass
+        for steps in step_range:
+            self.steps = steps
+            if steps % self.checkpoint_frequency == 0:
+                self.save_checkpoint(self.checkpoint_file_path)
+            if steps % self.epoch == 0:
+                self.exp.before_epoch(steps)
+            self.exp.run_step(steps)
+            if steps % self.epoch == 0:
+                self.exp.after_epoch(steps)
+        # Save checkpoint
+        self.save_checkpoint(self.checkpoint_file_path)
 
     def save_checkpoint(self, filename):
         results = self.state_dict()

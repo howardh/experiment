@@ -10,6 +10,7 @@ def test_find_next_free_file_concurrency(tmpdir):
 
 class DummyExp(Experiment):
     def setup(self, config, output_directory=None):
+        print(config)
         self.logger = Logger()
         self.rng = np.random.default_rng()
     def run_step(self,iteration):
@@ -39,7 +40,10 @@ def test_checkpoint_created(tmpdir):
     assert len(root_dir.listdir()) == 0
 
     exp = ExperimentRunner(DummyExpInterrupt, max_iterations=10, root_directory=root_dir)
-    exp.run()
+    try:
+        exp.run()
+    except KeyboardInterrupt:
+        pass
 
     assert len(root_dir.listdir()) == 1
 
