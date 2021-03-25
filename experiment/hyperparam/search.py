@@ -10,7 +10,10 @@ import skopt
 import scipy
 
 import matplotlib
-matplotlib.use('TkAgg')
+try:
+    matplotlib.use('TkAgg')
+except:
+    matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 from skopt.learning.gaussian_process import GaussianProcessRegressor
