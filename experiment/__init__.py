@@ -109,7 +109,6 @@ class ExperimentRunner:
                 self.exp.after_epoch(steps)
         # Save checkpoint
         self.save_checkpoint(self.checkpoint_file_path)
-
     def save_checkpoint(self, filename):
         results = self.state_dict()
         with open(filename,'wb') as f:
