@@ -6,3 +6,4 @@ from .distributions import Categorical
 from .distributions import Uniform
 from .distributions import IntUniform
 from .distributions import LogUniform
+from .distributions import LogIntUniform

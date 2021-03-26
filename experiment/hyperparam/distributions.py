@@ -90,9 +90,45 @@ class IntUniform(Uniform):
 class LogUniform(Uniform):
     def __init__(self, min_val, max_val, n=None):
         super().__init__(np.log(min_val),np.log(max_val),n)
+        if min_val <= 0 or max_val <= 0:
+            raise Exception('Range must be strictly positive.')
     def __repr__(self):
         return 'LogUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
     def sample(self):
         return np.exp(super().sample())
     def linspace(self, n=None):
         return np.exp(super().linspace(n))
+
+class LogIntUniform(Uniform):
+    def __init__(self, min_val, max_val, n=None):
+        super().__init__(np.log(min_val),np.log(max_val),n)
+        self._int_range = (min_val,max_val)
+        if min_val <= 0 or max_val <= 0:
+            raise Exception('Range must be strictly positive.')
+        self._cum_probs = self._compute_cum_probs()
+    def __repr__(self):
+        return 'LogIntUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
+    def sample(self):
+        r = np.random.rand()
+        for i,p in enumerate(self._cum_probs):
+            if r <= p:
+                return self._int_range[0]+i
+    def linspace(self, n=None):
+        if n is None:
+            n = self.n
+        output = []
+        j = 0
+        for i,v in enumerate(range(self._int_range[0], self._int_range[1]+1)):
+            if self._cum_probs[i] >= j/(n-1):
+                output.append(v)
+                j += 1
+        return np.array(output)
+    def _compute_cum_probs(self):
+        a,b = self._int_range
+        if a == b:
+            return np.array([1.])
+        else:
+            loga = np.log(a)
+            logb = np.log(b)
+            cum_probs = (np.log(np.arange(a,b+1))-loga)/(logb-loga)
+            return cum_probs
