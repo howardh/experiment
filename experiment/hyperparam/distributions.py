@@ -1,19 +1,6 @@
-
-"""
-- Constant
-- Discrete space
-    - Integers (i.e. with ordinal relationship)
-    - Categorical (i.e. no ordinal relationship)
-- Continuous
-    - Bounded
-        - Uniform
-        - Log uniform
-    - Unbounded
-        - Normal
-"""
-
 import numpy as np
 from abc import ABC, abstractmethod
+import skopt
 
 class Distribution(ABC):
     def __init__(self):
@@ -33,6 +20,8 @@ class Constant(Distribution):
         return self.val
     def linspace(self):
         return [self.val]
+    #def skopt_space(self):
+    #    return skopt.space.Categorical([self.val])
 
 class Categorical(Distribution):
     def __init__(self, vals):
@@ -45,8 +34,11 @@ class Categorical(Distribution):
         return np.random.choice(self.vals)
     def linspace(self):
         return self.vals
+    def skopt_space(self):
+        return skopt.space.Categorical(self.vals, transform='label')
 
 class Uniform(Distribution):
+    """ Range from `min_val` inclusive to `max_val` exclusive.  """
     def __init__(self, min_val, max_val, n=None):
         if max_val < min_val:
             raise Exception('max_val must be less than min_val. Received max_val=%f and min_val=%f.' % (max_val,min_val))
@@ -67,10 +59,13 @@ class Uniform(Distribution):
         if n is None:
             raise Exception('`n` not specified.')
         return np.linspace(self.min_val, self.max_val, n)
+    def skopt_space(self):
+        return skopt.space.Real(self.min_val,self.max_val,prior='uniform', transform='normalize')
 
 class IntUniform(Uniform):
+    """ Range from `min_val` to `max_val` inclusive.  """
     def __init__(self, min_val, max_val, n=None):
-        super().__init__(min_val,max_val,n)
+        super().__init__(min_val,max_val+1,n)
     def __len__(self):
         if self.n is None:
             return int(max_val-min_val)
@@ -86,8 +81,11 @@ class IntUniform(Uniform):
             return np.arange(self.min_val, self.max_val)
         else:
             return np.floor(np.linspace(self.min_val, self.max_val, n))
+    def skopt_space(self):
+        return skopt.space.Integer(self.min_val,self.max_val-1,prior='uniform', transform='normalize')
 
 class LogUniform(Uniform):
+    """ Range from `min_val` to `max_val` inclusive.  """
     def __init__(self, min_val, max_val, n=None):
         super().__init__(np.log(min_val),np.log(max_val),n)
         if min_val <= 0 or max_val <= 0:
@@ -98,8 +96,11 @@ class LogUniform(Uniform):
         return np.exp(super().sample())
     def linspace(self, n=None):
         return np.exp(super().linspace(n))
+    def skopt_space(self):
+        return skopt.space.Real(np.exp(self.min_val),np.exp(self.max_val),prior='log-uniform', transform='normalize')
 
 class LogIntUniform(Uniform):
+    """ Range from `min_val` to `max_val` inclusive.  """
     def __init__(self, min_val, max_val, n=None):
         super().__init__(np.log(min_val),np.log(max_val),n)
         self._int_range = (min_val,max_val)
@@ -129,6 +130,9 @@ class LogIntUniform(Uniform):
             return np.array([1.])
         else:
             loga = np.log(a)
-            logb = np.log(b)
-            cum_probs = (np.log(np.arange(a,b+1))-loga)/(logb-loga)
+            logb = np.log(b+1)
+            cum_probs = (np.log(np.arange(a,b+2))-loga)/(logb-loga)
+            cum_probs = cum_probs[1:]
             return cum_probs
+    def skopt_space(self):
+        return skopt.space.Integer(self._int_range[0],self._int_range[1],prior='log-uniform')

@@ -21,7 +21,7 @@ from skopt.learning.gaussian_process.kernels import Matern, RBF
 
 from experiment import Experiment, ExperimentRunner, load_checkpoint
 from experiment.utils import find_next_free_dir
-from .distributions import Distribution, Constant, Uniform, LogUniform, Categorical
+from .distributions import Distribution, Constant, Uniform, IntUniform, LogUniform, LogIntUniform, Categorical
 
 ##################################################
 
@@ -73,26 +73,22 @@ def search_space_skopt_dimensions(search_space):
     bounds = []
     for k in keys:
         dist = search_space[k]
-        if isinstance(dist,Uniform):
-            bounds.append(skopt.space.Real(dist.min_val,dist.max_val))
-        elif isinstance(dist,Categorical):
-            bounds.append(skopt.space.Categorical(dist.vals))
-        else:
-            raise Exception('Invalid distribution type: %s' % type(dist))
+        bounds.append(dist.skopt_space())
     return bounds
 
 def search_space_sample(search_space):
     return {k:v.sample() for k,v in search_space.items()}
 
-def config_dict_to_vector(search_space, config):
+def config_dict_to_vector(search_space, config, normalized=False):
     keys = search_space_vector_keys(search_space)
     def convert(k):
-        if isinstance(search_space[k],LogUniform):
-            return np.log(config[k])
-        return config[k]
+        if normalized:
+            return search_space[k].skopt_space().transform(config[k])
+        else:
+            return config[k]
     return [convert(k) for k in keys]
 
-def vector_to_config_dict(search_space, vec):
+def vector_to_config_dict(search_space, vec, normalized=False):
     keys = search_space_vector_keys(search_space)
     config = {
             **search_space
@@ -101,8 +97,8 @@ def vector_to_config_dict(search_space, vec):
         if isinstance(v,Constant):
             config[k] = v.sample()
     for k,v in zip(keys,vec):
-        if isinstance(search_space[k], LogUniform):
-            config[k] = np.exp(v)
+        if normalized:
+            config[k] = search_space[k].skopt_space().inverse_transform(v)
         else:
             config[k] = v
     return config
@@ -298,6 +294,24 @@ def plot_gaussian_process(res, **kwargs):
 
 ##################################################
 
+def load_past_experiment_results(cls, root_dir, search_space, score_fn, normalized=False):
+    x0 = []
+    y0 = []
+    for exp_dir in os.listdir(root_dir):
+        # Load them into Experiment objects
+        exp = load_checkpoint(cls, os.path.join(root_dir,exp_dir))
+        # Extract config
+        config = exp.config
+        config_vec = config_dict_to_vector(search_space, config, normalized=normalized)
+        # Apply score_fn to them
+        score = score_fn(exp.exp)
+        # Save as starting data for gp_minimize
+        x0.append(config_vec)
+        y0.append(score)
+    return x0,y0
+
+##################################################
+
 class Search(ABC):
     def __init__(self, cls,
             search_space: Mapping,
@@ -398,6 +412,7 @@ class BayesianOptimizationSearch(Search):
             self.directory = output_directory
         self.search_space = normalize_search_space(search_space)
         self.results = None
+        self.expected_min = None
     def run(self):
         import skopt
         from skopt import gp_minimize
@@ -405,19 +420,7 @@ class BayesianOptimizationSearch(Search):
         exp_runner_root_dir = os.path.join(self.directory,'Experiments')
         os.makedirs(exp_runner_root_dir,exist_ok=True)
         # Check if there's already existing results to load
-        x0 = []
-        y0 = []
-        for exp_dir in os.listdir(exp_runner_root_dir):
-            # Load them into Experiment objects
-            exp = load_checkpoint(self.cls, os.path.join(exp_runner_root_dir,exp_dir))
-            # Extract config
-            config = exp.config
-            config_vec = config_dict_to_vector(self.search_space, config)
-            # Apply score_fn to them
-            score = self.score_fn(exp.exp)
-            # Save as starting data for gp_minimize
-            x0.append(config_vec)
-            y0.append(score)
+        x0,y0 = load_past_experiment_results(self.cls, exp_runner_root_dir, self.search_space, self.score_fn, normalized=False)
         # Bounds
         bounds = search_space_bounds(self.search_space)
         # Objective function
@@ -441,7 +444,8 @@ class BayesianOptimizationSearch(Search):
                 n_initial_points=max(3-len(x0),0)
         )
         results = self.results
-        print(expected_minimum_bfgs(results))
+        self.expected_min = expected_minimum_bfgs(results)
+        print(self.expected_min)
     def plot_gp(self, filename=None):
         if self.results is None:
             raise Exception('Search must be run before GP can be plotted.')
@@ -565,30 +569,14 @@ class GaussianProcessAnalysis(Analysis):
         self.results = None
         self.best_result = None
         self.model = None
-    def _load_results(self):
-        self.results = []
-        for name in os.listdir(self.directory):
-            checkpoint_filename = os.path.join(self.directory,name,'checkpoint.pkl')
-            with open(checkpoint_filename,'rb') as f:
-                checkpoint = dill.load(f)
-            config = checkpoint['args']['config']
-            exp = self.cls()
-            exp.setup(config)
-            exp.load_state_dict(checkpoint['exp'])
-            self.results.append((self.score_fn(exp), config))
     def _fit_model(self):
         if self.model is not None:
             return self.model
-
-        # Load if needed
-        if self.results is None:
-            self._load_results()
-        # Extract data
-        x = [config_dict_to_vector(self.search_space,config) for _,config in self.results]
+        # Load data
+        x,y = load_past_experiment_results(self.cls, self.directory, self.search_space, self.score_fn, normalized=False)
         x = self.skopt_search_space.transform(x)
-        y = [score for score,_ in self.results]
         # Fit GP
-        gpr = GaussianProcessRegressor(kernel=self.kernel,normalize_y=True)
+        gpr = GaussianProcessRegressor(kernel=self.kernel,normalize_y=False)
         gpr.fit(x,y)
         print(gpr.score(x,y))
         self.model = gpr
@@ -620,30 +608,43 @@ class GaussianProcessAnalysis(Analysis):
         self._find_optimum()
         score,config = self.best_result
         return score
+    def compute_scores(self, config, normalized=False):
+        gpr = self._fit_model()
+        if isinstance(config, Mapping):
+            x = self.skopt_search_space.transform(config_dict_to_vector(config))
+        else:
+            if normalized:
+                x = config
+            else:
+                x = self.skopt_search_space.transform(config)
+        return gpr.predict(x)
     def plot(self):
         gpr = self._fit_model()
 
         import matplotlib
-        matplotlib.use('TkAgg')
+        matplotlib.use('Agg')
         from matplotlib import pyplot as plt
 
-        # Points (TODO: Project onto plane)
-        x = [config_dict_to_vector(self.search_space,config) for _,config in self.results]
-        x = self.skopt_search_space.transform(x)
-        y = [score for score,_ in self.results]
-        plt.scatter(x,y)
-
-        # Gaussian Process
+        # Bounds
         bounds = self.skopt_search_space.transformed_bounds
         x0 = np.array([b[0] for b in bounds])
         x1 = np.array([b[1] for b in bounds])
+
+        # Points
+        x,y = load_past_experiment_results(self.cls, self.directory, self.search_space, self.score_fn, normalized=False)
+        x = self.skopt_search_space.transform(x)
+        x_proj = project_point(x,x0,x1)
+        plt.scatter(x_proj,y)
+
+        # Gaussian Process
         x_plot = np.linspace(0,1,1000)
         x = np.linspace(x0,x1,1000)
 
-        ## Acquisition function
-        #from skopt.acquisition import gaussian_ei
-        #y = gaussian_ei(x,gpr)
-        #plt.plot(x_plot,y)
+        # Acquisition function
+        from skopt.acquisition import gaussian_ei, gaussian_lcb
+        y = gaussian_ei(x,gpr)
+        #y = gaussian_lcb(x,gpr)
+        plt.plot(x_plot,y,color='red')
 
         # mean
         y,std = gpr.predict(x, return_std=True)
@@ -651,5 +652,3 @@ class GaussianProcessAnalysis(Analysis):
         plt.plot(x_plot,y)
         #plt.show()
         plt.savefig('plot.png')
-
-        pass
