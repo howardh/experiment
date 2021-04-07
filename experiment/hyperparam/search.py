@@ -618,12 +618,16 @@ class GaussianProcessAnalysis(Analysis):
             else:
                 x = self.skopt_search_space.transform(config)
         return gpr.predict(x)
-    def plot(self):
+    def plot(self, show_points=True, show_gp_mean=True, show_gp_std=False, acq_func=None, filename='plot.png'):
+        """
+        Args:
+            show_points (bool): If `True`, create a scatter plot of each experiment result.
+            show_gp_mean (bool): If `True`, plot a line representing the Gaussian Process fitted to the data.
+            show_gp_std (bool): 
+            acq_func (str): None, "ei", or "lcb"
+            filename (str): Path to the file where the plot is to be saved.
+        """
         gpr = self._fit_model()
-
-        import matplotlib
-        matplotlib.use('Agg')
-        from matplotlib import pyplot as plt
 
         # Bounds
         bounds = self.skopt_search_space.transformed_bounds
@@ -634,21 +638,30 @@ class GaussianProcessAnalysis(Analysis):
         x,y = load_past_experiment_results(self.cls, self.directory, self.search_space, self.score_fn, normalized=False)
         x = self.skopt_search_space.transform(x)
         x_proj = project_point(x,x0,x1)
-        plt.scatter(x_proj,y)
+        if show_points:
+            plt.scatter(x_proj,y)
 
         # Gaussian Process
         x_plot = np.linspace(0,1,1000)
         x = np.linspace(x0,x1,1000)
 
         # Acquisition function
-        from skopt.acquisition import gaussian_ei, gaussian_lcb
-        y = gaussian_ei(x,gpr)
-        #y = gaussian_lcb(x,gpr)
-        plt.plot(x_plot,y,color='red')
+        if acq_func == 'ei':
+            from skopt.acquisition import gaussian_ei
+            y = gaussian_ei(x,gpr)
+            plt.plot(x_plot,y,color='red', label='EI Acquisition Function')
+        elif acq_func == 'lcb':
+            from skopt.acquisition import gaussian_lcb
+            y = gaussian_lcb(x,gpr)
+            plt.plot(x_plot,y,color='red', label='LCB Acquisition Function')
 
         # mean
         y,std = gpr.predict(x, return_std=True)
-        plt.fill_between(x_plot,y-std,y+std, alpha=0.2)
-        plt.plot(x_plot,y)
-        #plt.show()
-        plt.savefig('plot.png')
+        if show_gp_std:
+            plt.fill_between(x_plot,y-std,y+std, alpha=0.2)
+        if show_gp_mean:
+            plt.plot(x_plot,y)
+
+        # Save
+        plt.savefig(filename)
+        print('File saved at %s' % os.path.abspath(filename))
