@@ -6,7 +6,7 @@ import pprint
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 
-from .utils import find_next_free_dir, find_next_free_file
+from .utils import find_next_free_dir
 
 class Experiment(ABC):
     @abstractmethod

@@ -1,20 +1,30 @@
 class Logger:
-    def __init__(self, manual_iteration=False, key_name=None, overwrite=False):
+    def __init__(self, key_name=None, manual_iteration=False, overwrite=False):
         """
         Args:
             key_name: Name of a logged value that is unique for each iteration.
                 Consecutive calls to `Logger.log` with the same value for this key will be logged together.
                 If not specified, then each call to `Logger.log` is assumed to be a distinct iteration.
                 Can be a list of strings if multiple keys form the iteration's identifier, in which case, at least one of the listed values have to be different between iterations.
+            overwrite: If set to `True`, then when values are logged for the same key and both values cannot be saved, the latest logged value will overwrite the existing values. If `False`, then an exception will be raised instead.
         """
-        self.manual_iteration = manual_iteration
         self.key_name = key_name
+        self.manual_iteration = manual_iteration
+        self.overwrite = overwrite
+
         self.data = []
 
     def __getitem__(self,index):
         return self.data[index]
     def __len__(self):
         return len(self.data)
+
+    def _is_logger_key(self, k):
+        if type(self.key_name) is str and k == self.key_name:
+            return True
+        if type(self.key_name) is list and k in self.key_name:
+            return True
+        return False
 
     def _did_key_change(self, data):
         if len(self.data) == 0:
@@ -43,10 +53,27 @@ class Logger:
             self.data.append({})
         for k,v in data.items():
             if k in self.data[-1]:
-                if (type(self.key_name) is str and k != self.key_name) or (type(self.key_name) is list and k not in self.key_name): 
+                if not self._is_logger_key(k) and not self.overwrite:
                     raise Exception('Key "%s" already exists for this iteration.' % k)
             self.data[-1][k] = v
             
+    def append(self,**data):
+        if self._did_key_change(data) and not self.manual_iteration:
+            self.data.append({})
+        for k,v in data.items():
+            if self._is_logger_key(k):
+                self.data[-1][k] = v
+                continue
+            if k in self.data[-1]:
+                if type(self.data[-1][k]) is not list:
+                    if self.overwrite:
+                        self.data[-1][k] = []
+                    else:
+                        raise Exception('Key "%s" has already been assigned (probably via `Logger.log()`). The same key cannot be used in both `log()` and `append()`.' % k)
+                self.data[-1][k].append(v)
+            else:
+                self.data[-1][k] = [v]
+
     def mean(self, key):
         total = 0
         count = 0
