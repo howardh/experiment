@@ -18,6 +18,11 @@ class Logger:
         return self.data[index]
     def __len__(self):
         return len(self.data)
+    def __iter__(self):
+        for x in self.data:
+            yield x
+    def __reversed__(self):
+        return reversed(self.data)
 
     def _is_logger_key(self, k):
         if type(self.key_name) is str and k == self.key_name:

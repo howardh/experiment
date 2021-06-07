@@ -7,6 +7,7 @@ setup(name='experiment',
     packages=['experiment'],
     install_requires=['dill','tqdm','matplotlib','scipy','scikit-optimize'],
     extras_require={
-        'dev': ['pytest','pytest-cov','pdoc3']
+        'dev': ['pytest','pytest-cov','pdoc3'],
+        'examples': ['torch', 'torchvision','gym']
     }
 )

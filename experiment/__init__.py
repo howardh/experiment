@@ -5,6 +5,7 @@ import itertools
 import pprint
 from tqdm import tqdm
 from abc import ABC, abstractmethod
+from typing import Optional, Type, Mapping
 
 from .utils import find_next_free_dir
 
@@ -27,13 +28,17 @@ class Experiment(ABC):
         pass
 
 class ExperimentRunner:
-    def __init__(self, cls,
-            experiment_name=None,
-            root_directory='./results',
-            trial_id=None, results_directory=None,
-            epoch=50, max_iterations=None, verbose=False,
-            checkpoint_frequency=10000,
-            config={}):
+    def __init__(self,
+            cls : Type[Experiment],
+            experiment_name : Optional[str] = None,
+            root_directory : str = './results',
+            trial_id : Optional[str] = None,
+            results_directory : Optional[str] = None,
+            epoch=50, # XXX: Deprecated
+            max_iterations : Optional[int] = None,
+            verbose : bool = False,
+            checkpoint_frequency : Optional[int] = 10000,
+            config : Mapping = {}):
         """
         Args:
             cls (Experiment): The class defining the experiment to run.
@@ -100,7 +105,7 @@ class ExperimentRunner:
                 step_range = tqdm(step_range, total=self.max_iterations, initial=self.steps)
         for steps in step_range:
             self.steps = steps
-            if steps % self.checkpoint_frequency == 0:
+            if self.checkpoint_frequency is not None and steps % self.checkpoint_frequency == 0:
                 self.save_checkpoint(self.checkpoint_file_path)
             if steps % self.epoch == 0:
                 self.exp.before_epoch(steps)
