@@ -5,7 +5,7 @@ import itertools
 import pprint
 from tqdm import tqdm
 from abc import ABC, abstractmethod
-from typing import Optional, Type, Mapping
+from typing import Optional, Type, Mapping, TypeVar, Generic
 
 from .utils import find_next_free_dir
 
@@ -20,16 +20,36 @@ class Experiment(ABC):
     def state_dict(self):
         return {}
     def load_state_dict(self,state):
+        state = state
         pass
 
-    def before_epoch(self,iteration):
-        pass
-    def after_epoch(self,iteration):
-        pass
+def get_experiment_directories(*,
+        root_directory, results_directory, experiment_name, trial_id):
+    if results_directory is None:
+        if trial_id is None:
+            trial_id = time.strftime("%Y_%m_%d-%H_%M_%S")
+            results_directory = find_next_free_dir(
+                    root_directory,
+                    '{}-{}-%d'.format(experiment_name, trial_id)
+            )
+        else:
+            results_directory = os.path.join(
+                    root_directory, '{}-{}'.format(experiment_name, trial_id))
+    checkpoint_file_path = os.path.join(
+            results_directory,'checkpoint.pkl')
+    experiment_output_directory = os.path.join(
+            results_directory, 'output')
+    return {
+            'results': results_directory,
+            'checkpoint': checkpoint_file_path,
+            'output': experiment_output_directory
+    }
 
-class ExperimentRunner:
+ExpType = TypeVar('ExpType', bound=Experiment) # Must be a subclass of `Experiment`
+class ExperimentRunner(Generic[ExpType]):
     def __init__(self,
-            cls : Type[Experiment],
+            cls : Type[ExpType],
+            *, # All following arguments must be named (i.e. cannot be positional)
             experiment_name : Optional[str] = None,
             root_directory : str = './results',
             trial_id : Optional[str] = None,
@@ -57,7 +77,7 @@ class ExperimentRunner:
         self.args = kwargs
 
         self.config = config
-        self.experiment_name = experiment_name or cls.__name__
+        self.experiment_name = experiment_name
         self.root_directory = root_directory
         self.results_directory = results_directory
         self.epoch = epoch
@@ -66,17 +86,15 @@ class ExperimentRunner:
         self.checkpoint_frequency = checkpoint_frequency
         self.max_iterations = max_iterations
 
-        if self.results_directory is None:
-            if self.trial_id is None:
-                self.trial_id = time.strftime("%Y_%m_%d-%H_%M_%S")
-            self.results_directory = find_next_free_dir(
-                    self.root_directory,
-                    '{}-{}-%d'.format(self.experiment_name, self.trial_id)
-            )
-        self.checkpoint_file_path = os.path.join(
-                self.results_directory,'checkpoint.pkl')
-        self.experiment_output_directory = os.path.join(
-                self.results_directory, 'output')
+        directories = get_experiment_directories(
+                root_directory=self.root_directory,
+                results_directory=self.results_directory,
+                experiment_name=experiment_name,
+                trial_id=trial_id
+        )
+        self.results_directory = directories['results']
+        self.checkpoint_file_path = directories['checkpoint']
+        self.experiment_output_directory = directories['output']
         os.makedirs(self.experiment_output_directory, exist_ok=True)
 
         self.steps = 0
@@ -93,6 +111,7 @@ class ExperimentRunner:
         )
 
     def setup(self, **kwargs):
+        kwargs = kwargs
         pass
 
     def run(self):
@@ -107,13 +126,11 @@ class ExperimentRunner:
             self.steps = steps
             if self.checkpoint_frequency is not None and steps % self.checkpoint_frequency == 0:
                 self.save_checkpoint(self.checkpoint_file_path)
-            if steps % self.epoch == 0:
-                self.exp.before_epoch(steps)
             self.exp.run_step(steps)
-            if steps % self.epoch == 0:
-                self.exp.after_epoch(steps)
-        # Save checkpoint
-        self.save_checkpoint(self.checkpoint_file_path)
+        # Save final checkpoint
+        if self.steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
+            self.steps += 1
+            self.save_checkpoint(self.checkpoint_file_path)
     def save_checkpoint(self, filename):
         results = self.state_dict()
         with open(filename,'wb') as f:
@@ -142,14 +159,39 @@ class ExperimentRunner:
         if self.max_iterations is None:
             self.step_range = itertools.count(self.steps)
         else:
-            self.step_range = range(self.steps+1,self.max_iterations)
+            self.step_range = range(self.steps,self.max_iterations)
 
+def make_experiment_runner(cls : Type[ExpType],
+            *, # All following arguments must be named (i.e. cannot be positional)
+            experiment_name : Optional[str] = None,
+            root_directory : str = './results',
+            trial_id : Optional[str] = None,
+            results_directory : Optional[str] = None,
+            max_iterations : Optional[int] = None,
+            verbose : bool = False,
+            checkpoint_frequency : Optional[int] = 10000,
+            config : Mapping = {}) -> ExperimentRunner[ExpType]:
+
+    experiment_name = experiment_name or cls.__name__
+
+    directories = get_experiment_directories(
+            root_directory=root_directory,
+            results_directory=results_directory,
+            experiment_name=experiment_name,
+            trial_id=trial_id
+    )
+
+    checkpoint_filename = directories['checkpoint']
+    if not os.path.isfile(checkpoint_filename):
+        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,config=config)
+
+    return load_checkpoint(cls,checkpoint_filename)
 
 def load_checkpoint(cls, path):
     if os.path.isfile(path):
         with open(path,'rb') as f:
             state = dill.load(f)
-    if os.path.isdir(path):
+    elif os.path.isdir(path):
         with open(os.path.join(path,'checkpoint.pkl'),'rb') as f:
             state = dill.load(f)
     else:
