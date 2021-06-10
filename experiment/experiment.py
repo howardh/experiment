@@ -199,13 +199,12 @@ def load_checkpoint(cls, path):
 
     # Check that the given class matches with the checkpoint experiment class
     # Or it it is a child class of the original
-    cls_name = state['args'].get('cls')
+    cls_name = state['args'].pop('cls')
     parent_cls_names = (str(parent_cls_name) for parent_cls_name in cls.__bases__)
     if cls_name != str(cls) and cls_name not in parent_cls_names:
         raise Exception('Experiment class mismatch. Expected %s. Found %s.' % (cls_name,cls))
-    state['args']['cls'] = cls
 
     # Create experiment runner with
-    exp = ExperimentRunner(**state['args'])
+    exp = ExperimentRunner(cls, **state['args']) # cls needs to be passed as a positional argument, otherwise it fails in python 3.7. See https://stackoverflow.com/questions/62235830/why-is-the-cls-keyword-attribute-reserved-when-using-typing-generic-in-python
     exp.load_state_dict(state)
     return exp
