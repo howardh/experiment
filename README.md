@@ -15,3 +15,8 @@ Serve docs with built-in server:
 ```
 pdoc3 --http : experiment
 ```
+
+Run tests with coverage report:
+```
+pytest --cov=experiment --cov-report html
+```

@@ -1,7 +1,14 @@
+import os
+
+from experiment.experiment import sub_env_var
 import numpy as np
 
 from experiment import Experiment, ExperimentRunner, load_checkpoint, make_experiment_runner
 from experiment.logger import Logger
+
+##################################################
+# Test Utils
+##################################################
 
 class Callback:
     def __init__(self):
@@ -34,11 +41,37 @@ class DummyExp(Experiment):
         self.rng.bit_generator.state = state['rng']
         self.logger.load_state_dict(state['logger'])
 
+##################################################
+# sub_env_var
+##################################################
+
+def test_sub_env_var_none_input():
+    assert sub_env_var(None) is None
+
+def test_sub_env_var_no_subs():
+    assert sub_env_var('asdf') == 'asdf'
+
+def test_sub_env_var_not_found():
+    assert sub_env_var('asdf {$THING_THAT_DOESNT_EXIST}') == 'asdf {$THING_THAT_DOESNT_EXIST}'
+
+def test_sub_env_var_single_var():
+    os.environ['FOO'] = 'boop'
+    assert sub_env_var('asdf {$FOO}') == 'asdf boop'
+
+def test_sub_env_var_two_vars():
+    os.environ['FOO'] = 'boop'
+    os.environ['BAR'] = 'beep'
+    assert sub_env_var('asdf {$FOO}{$BAR}') == 'asdf boopbeep'
+
+##################################################
+# Experiment Runner
+##################################################
+
 def test_experiment_runs_without_error():
     exp = ExperimentRunner(DummyExp, max_iterations=10)
     exp.run()
 
-def test_experiment_number_of_steps(tmpdir):
+def test_experiment_number_of_steps():
     exp_runner = ExperimentRunner(DummyExp, max_iterations=2)
     exp_runner.run()
     assert len(exp_runner.exp.logger.data) == 2
@@ -48,7 +81,8 @@ def test_checkpoint_created(tmpdir):
     root_dir = tmpdir.mkdir('results')
     assert len(root_dir.listdir()) == 0
 
-    exp = ExperimentRunner(DummyExp, max_iterations=10, root_directory=root_dir,
+    exp = ExperimentRunner(DummyExp, max_iterations=10,
+            root_directory=str(root_dir),
             config={
                 'interrupt_at': 3
             })
@@ -64,7 +98,7 @@ def test_results_saved(tmpdir):
     root_dir = tmpdir.mkdir('results')
     assert len(root_dir.listdir()) == 0
 
-    exp = ExperimentRunner(DummyExp, max_iterations=10, root_directory=root_dir)
+    exp = ExperimentRunner(DummyExp, max_iterations=10, root_directory=str(root_dir))
     exp.run()
 
     assert len(root_dir.listdir()) == 1
@@ -80,7 +114,7 @@ def test_load_checkpoint(tmpdir):
     assert len(root_dir.listdir()) == 0
 
     exp = ExperimentRunner(
-            DummyExp, max_iterations=10, root_directory=root_dir
+            DummyExp, max_iterations=10, root_directory=str(root_dir)
     )
     exp.run()
 
@@ -103,7 +137,7 @@ def test_same_id_loads_checkpoint(tmpdir):
             DummyExp,
             trial_id='dummy',
             max_iterations=2,
-            root_directory=root_dir,
+            root_directory=str(root_dir),
             checkpoint_frequency=10,
             config={
                 'seed': 0,
@@ -123,7 +157,7 @@ def test_same_id_loads_checkpoint(tmpdir):
             DummyExp,
             trial_id='dummy',
             max_iterations=2,
-            root_directory=root_dir,
+            root_directory=str(root_dir),
             checkpoint_frequency=10,
             config={}
     )
