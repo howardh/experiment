@@ -67,12 +67,14 @@ def test_sub_env_var_two_vars():
 # Experiment Runner
 ##################################################
 
-def test_experiment_runs_without_error():
-    exp = ExperimentRunner(DummyExp, max_iterations=10)
+def test_experiment_runs_without_error(tmpdir):
+    root_dir = tmpdir.mkdir('results')
+    exp = ExperimentRunner(DummyExp, max_iterations=10, root_directory=str(root_dir))
     exp.run()
 
-def test_experiment_number_of_steps():
-    exp_runner = ExperimentRunner(DummyExp, max_iterations=2)
+def test_experiment_number_of_steps(tmpdir):
+    root_dir = tmpdir.mkdir('results')
+    exp_runner = ExperimentRunner(DummyExp, max_iterations=2, root_directory=str(root_dir))
     exp_runner.run()
     assert len(exp_runner.exp.logger.data) == 2
 
@@ -179,6 +181,7 @@ def test_same_id_loads_checkpoint(tmpdir):
     exp_runner2 = make_experiment_runner(
             DummyExp,
             max_iterations=2,
+            root_directory=str(root_dir),
             checkpoint_frequency=10,
             config={
                 'seed': 0,

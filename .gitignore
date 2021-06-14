@@ -1,2 +1,7 @@
 experiment.egg-info/
 __pycache__
+html
+htmlcov
+.coverage
+.vim
+Session.vim
