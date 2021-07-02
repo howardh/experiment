@@ -9,7 +9,7 @@ from typing import Optional, Type, Mapping, TypeVar, Generic
 import dill
 from tqdm import tqdm
 
-from .utils import find_next_free_dir
+from .utils import find_next_free_dir, dill_dump_rolling, dill_load_rolling
 
 class Experiment(ABC): # pragma: no cover
     @abstractmethod
@@ -70,10 +70,10 @@ class ExperimentRunner(Generic[ExpType]):
             root_directory : str = './results',
             trial_id : Optional[str] = None,
             results_directory : Optional[str] = None,
-            epoch=50, # XXX: Deprecated
             max_iterations : Optional[int] = None,
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
+            num_checkpoints : int = 2,
             config : Mapping = {}):
         """
         Args:
@@ -86,6 +86,7 @@ class ExperimentRunner(Generic[ExpType]):
             epoch (int): Number of steps in an epoch
             max_iterations (int): The maximum number of iterations to run. If `None`, then there is no limit.
             checkpoint_frequency (int): Number of steps between each saved checkpoint.
+            num_checkpoints (int): The number of checkpoints to keep on disk.
             config (collections.abc.Mapping): Parameters that are passed to the experiment's `setup` method.
         """
         kwargs = locals()
@@ -96,11 +97,11 @@ class ExperimentRunner(Generic[ExpType]):
         self.experiment_name = experiment_name
         self.root_directory = sub_env_var(root_directory)
         self.results_directory = sub_env_var(results_directory)
-        self.epoch = epoch
         self.verbose = verbose
         self.trial_id = sub_env_var(trial_id)
         self.checkpoint_frequency = checkpoint_frequency
         self.max_iterations = max_iterations
+        self.num_checkpoints = num_checkpoints
 
         directories = get_experiment_directories(
                 root_directory=self.root_directory,
@@ -149,8 +150,8 @@ class ExperimentRunner(Generic[ExpType]):
             self.save_checkpoint(self.checkpoint_file_path)
     def save_checkpoint(self, filename):
         results = self.state_dict()
-        with open(filename,'wb') as f:
-            dill.dump(results,f)
+        filenames = [filename] + ['%s.%d' % (filename,i) for i in range(self.num_checkpoints)]
+        dill_dump_rolling(results,filenames)
         if self.verbose:
             tqdm.write('Checkpoint saved at %s' % os.path.abspath(filename))
 
@@ -208,8 +209,10 @@ def load_checkpoint(cls, path):
         with open(path,'rb') as f:
             state = dill.load(f)
     elif os.path.isdir(path):
-        with open(os.path.join(path,'checkpoint.pkl'),'rb') as f:
-            state = dill.load(f)
+        num_files = len(os.listdir(path))
+        filename = os.path.join(path,'checkpoint.pkl')
+        filenames = [filename]+['%s.%d' % (filename,i) for i in range(num_files)]
+        state = dill_load_rolling(filenames)
     else:
         raise Exception('Checkpoint does not exist: %s' % path)
 

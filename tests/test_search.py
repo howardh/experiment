@@ -47,7 +47,6 @@ def test_gridsearch(tmpdir):
 
     search = GridSearch(DummyExp, search_space,
             root_directory=root_dir,
-            epoch=3,
             checkpoint_frequency=100,
             max_iterations=10,
     )
@@ -62,7 +61,6 @@ def test_random_search(tmpdir):
 
     search = RandomSearch(DummyExp, search_space,
             root_directory=root_dir,
-            epoch=3,
             checkpoint_frequency=100,
             max_iterations=10,
             search_budget=10
@@ -79,7 +77,6 @@ def test_bo_search_and_analysis_match(tmpdir):
     search = BayesianOptimizationSearch(DummyExp, search_space,
             score_fn=lambda exp: exp.logger.mean('val'),
             root_directory=root_dir,
-            epoch=3,
             checkpoint_frequency=100,
             max_iterations=10,
             search_budget=10
@@ -108,7 +105,6 @@ def test_bo_search_add_budget(tmpdir):
     search = BayesianOptimizationSearch(DummyExp, search_space,
             score_fn=lambda exp: exp.logger.mean('val'),
             root_directory=root_dir,
-            epoch=3,
             checkpoint_frequency=100,
             max_iterations=10,
             search_budget=10
@@ -121,7 +117,6 @@ def test_bo_search_add_budget(tmpdir):
     search = BayesianOptimizationSearch(DummyExp, search_space,
             score_fn=lambda exp: exp.logger.mean('val'),
             output_directory=search.directory,
-            epoch=3,
             checkpoint_frequency=100,
             max_iterations=10,
             search_budget=10
