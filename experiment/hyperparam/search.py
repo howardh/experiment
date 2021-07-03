@@ -244,6 +244,8 @@ def plot_gaussian_process(res, **kwargs):
 
     # Plot true function.
     if objective is not None:
+        if fx is None:
+            raise Exception()
         ax.plot(x, fx, "r--", label="True (unknown)")
         ax.fill(np.concatenate(
             [x, x[::-1]]),
@@ -515,26 +517,28 @@ class SimpleAnalysis(Analysis):
             exp = self.cls()
             exp.load_state_dict(checkpoint['exp'])
             self.results.append((self.score_fn(exp),config))
+        return self.results
     def _sort_results(self):
         if self.results is None:
             self._load_results()
         if self.results is None:
             raise Exception('This should never happen. This is only here to make pyright happy.')
         if self.sorted_results is not None:
-            return
+            return self.sorted_results
         sorted_results = sorted(
                 self.results,
                 key=lambda x: x[0],
                 reverse=self.maximize
         )
         self.sorted_results = sorted_results
+        return sorted_results
     def get_best_config(self):
-        self._sort_results()
-        _,config = self.sorted_results[0]
+        sorted_results = self._sort_results()
+        _,config = sorted_results[0]
         return config
     def get_best_score(self):
-        self._sort_results()
-        score,_ = self.sorted_results[0]
+        sorted_results = self._sort_results()
+        score,_ = sorted_results[0]
         return score
 
 class GroupedAnalysis(Analysis):
@@ -566,21 +570,24 @@ class GroupedAnalysis(Analysis):
     def _sort_results(self):
         if self.results is None:
             self._load_results()
+        if self.results is None:
+            raise Exception('This should never happen. This is only here to make pyright happy.')
         if self.sorted_results is not None:
-            return
+            return self.sorted_results
         sorted_results = sorted(
                 self.results.items(),
                 key=lambda x: np.mean(x[1]),
                 reverse=self.maximize
         )
         self.sorted_results = sorted_results
+        return sorted_results
     def get_best_config(self):
-        self._sort_results()
-        config,_ = self.sorted_results[0]
-        return dict(config)
+        sorted_results = self._sort_results()
+        _,config = sorted_results[0]
+        return config
     def get_best_score(self):
-        self._sort_results()
-        _,score = self.sorted_results[0]
+        sorted_results = self._sort_results()
+        score,_ = sorted_results[0]
         return score
 
 class GaussianProcessAnalysis(Analysis):

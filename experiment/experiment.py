@@ -145,7 +145,7 @@ class ExperimentRunner(Generic[ExpType]):
                 self.save_checkpoint(self.checkpoint_file_path)
             self.exp.run_step(steps)
         # Save final checkpoint
-        if self.steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
+        if self.max_iterations is not None and self.steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
             self.steps += 1
             self.save_checkpoint(self.checkpoint_file_path)
     def save_checkpoint(self, filename):

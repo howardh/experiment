@@ -1,8 +1,7 @@
 import pytest
-import os
 import numpy as np
 
-from experiment.hyperparam import Categorical, Uniform, IntUniform, LogUniform, LogIntUniform
+from experiment.hyperparam import Uniform, IntUniform, LogUniform, LogIntUniform
 
 ##################################################
 # Uniform
@@ -42,7 +41,7 @@ def test_log_uniform():
 
 def test_log_uniform_negative():
     with pytest.raises(Exception):
-        dist = LogUniform(-5, 3)
+        LogUniform(-5, 3)
 
 def test_log_uniform_size_0():
     dist = LogUniform(1e-3, 1e-3)

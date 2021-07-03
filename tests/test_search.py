@@ -26,6 +26,7 @@ class DummyExp(Experiment):
         )
         self.logger = Logger()
     def run_step(self,iteration):
+        del iteration # Make pyright happy
         self.logger.log(val=self.mean)
     def state_dict(self):
         return {
@@ -94,6 +95,8 @@ def test_bo_search_and_analysis_match(tmpdir):
     print(analysis.get_best_config())
 
     # Check that we have the same model in the search and the analysis
+    assert search.expected_min is not None
+    assert search.results is not None
     config = search.expected_min[0]
     search_score = search.results.models[-1].predict(search.results['space'].transform([config]))
     analysis_score = analysis.compute_scores([config], normalized=False)

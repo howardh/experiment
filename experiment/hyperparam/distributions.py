@@ -122,6 +122,8 @@ class LogIntUniform(Uniform):
     def linspace(self, n=None):
         if n is None:
             n = self.n
+        if n is None:
+            raise Exception('`n` not specified.')
         output = []
         j = 0
         for i,v in enumerate(range(self._int_range[0], self._int_range[1]+1)):
