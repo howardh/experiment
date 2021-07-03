@@ -1,5 +1,7 @@
-import numpy as np
+from typing import Optional
 from abc import ABC, abstractmethod
+
+import numpy as np
 import skopt
 
 class Distribution(ABC):
@@ -68,7 +70,7 @@ class IntUniform(Uniform):
         super().__init__(min_val,max_val+1,n)
     def __len__(self):
         if self.n is None:
-            return int(max_val-min_val)
+            return int(self.max_val-self.min_val)
         return self.n
     def __repr__(self):
         return 'IntUniform(%f,%f,n=%s)' % (self.min_val, self.max_val, self.n)
@@ -86,12 +88,12 @@ class IntUniform(Uniform):
 
 class LogUniform(Uniform):
     """ Range from `min_val` to `max_val` inclusive.  """
-    def __init__(self, min_val, max_val, n=None):
+    def __init__(self, min_val : float, max_val : float, n : Optional[int] = None):
         super().__init__(np.log(min_val),np.log(max_val),n)
         if min_val <= 0 or max_val <= 0:
             raise Exception('Range must be strictly positive.')
     def __repr__(self):
-        return 'LogUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
+        return 'LogUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val),self.n)
     def sample(self):
         return np.exp(super().sample())
     def linspace(self, n=None):
@@ -108,7 +110,7 @@ class LogIntUniform(Uniform):
             raise Exception('Range must be strictly positive.')
         self._cum_probs = self._compute_cum_probs()
     def __repr__(self):
-        return 'LogIntUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val,self.n))
+        return 'LogIntUniform(%f,%f,n=%s)' % (np.exp(self.min_val), np.exp(self.max_val),self.n)
     def sample(self):
         r = np.random.rand()
         for i,p in enumerate(self._cum_probs):
