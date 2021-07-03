@@ -79,7 +79,7 @@ class Logger:
             else:
                 self.data[-1][k] = [v]
 
-    def mean(self, key):
+    def mean(self, key) -> float:
         total = 0
         count = 0
         for d in self.data:

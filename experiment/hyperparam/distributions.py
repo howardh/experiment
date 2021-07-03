@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -9,6 +9,9 @@ class Distribution(ABC):
         pass
     @abstractmethod
     def sample(self):
+        pass
+    @abstractmethod
+    def linspace(self) -> List:
         pass
 
 class Constant(Distribution):

@@ -13,6 +13,7 @@ EPS = 1e-6
 class DummyExp(Experiment):
     def setup(self, config, output_directory=None):
         print(config)
+        print(output_directory)
         assert config['const'] == 1
         assert 0 <= config['uniform'] <= 1
         assert 0 <= config['int_uniform'] <= 2
@@ -130,7 +131,7 @@ def test_project_point():
     x0 = np.array([0,0])
     x1 = np.array([1,1])
     x = np.array([0.5,0.5])
-    x_proj = project_point(x,x0,x1)
+    x_proj = project_point(x,x0,x1)['length']
     assert pytest.approx(x_proj.item()) == 0.5
 
 def test_vector_to_config_dict():

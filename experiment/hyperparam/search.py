@@ -1,13 +1,10 @@
-from abc import ABC, abstractmethod
-from typing import Callable
+from abc import ABC
+from typing import Callable, Generic, Type, TypeVar, Union, Optional
+from typing_extensions import TypedDict
 from collections import defaultdict
 from collections.abc import Mapping
 import itertools
-import numpy as np
 import os
-import dill
-import skopt
-import scipy
 
 import matplotlib
 try:
@@ -15,13 +12,27 @@ try:
 except:
     matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-
+import numpy as np
+import dill
+import skopt
+import scipy
+import scipy.optimize
 from skopt.learning.gaussian_process import GaussianProcessRegressor
-from skopt.learning.gaussian_process.kernels import Matern, RBF
+#from skopt.learning.gaussian_process.kernels import Matern, RBF
+from skopt.learning.gaussian_process.kernels import Matern
 
 from experiment import Experiment, ExperimentRunner, load_checkpoint
 from experiment.utils import find_next_free_dir
-from .distributions import Distribution, Constant, Uniform, IntUniform, LogUniform, LogIntUniform, Categorical
+#from .distributions import Distribution, Constant, Uniform, IntUniform, LogUniform, LogIntUniform, Categorical
+from .distributions import Distribution, Constant, Uniform, Categorical
+
+##################################################
+
+ExpType = TypeVar('ExpType', bound=Experiment) # Must be a subclass of `Experiment`
+
+class ProjectedPoint(TypedDict):
+    length: np.ndarray
+    distance: Optional[np.ndarray]
 
 ##################################################
 
@@ -103,7 +114,12 @@ def vector_to_config_dict(search_space, vec, normalized=False):
             config[k] = v
     return config
 
-def project_point(x,x0,x1,include_distance=False):
+def project_point(
+        x : np.ndarray,
+        x0 : np.ndarray,
+        x1 : np.ndarray,
+        include_distance : bool = False
+    ) -> ProjectedPoint:
     """
     Return the length of the projection of point `x` onto the line formed by the line between `x0` and `x1`
     """
@@ -117,11 +133,11 @@ def project_point(x,x0,x1,include_distance=False):
         dist = np.sqrt(np.sum((u-proj_u)**2, axis=1))
         if dist.min() == dist.max():
             dist[:] = 1
-        return scalar_proj_u,dist
+        return {'length':scalar_proj_u, 'distance': dist}
     else:
-        return scalar_proj_u
+        return {'length':scalar_proj_u, 'distance': None}
 
-def expected_minimum_bfgs(res, n_random_starts=10, random_state=None): 
+def expected_minimum_bfgs(res, random_state=None): 
     # Random starting guesses
     random_samples = res.space.rvs(random_state=random_state)
     random_samples = res.space.transform(random_samples)
@@ -182,21 +198,23 @@ def plot_gaussian_process(res, **kwargs):
     show_legend = kwargs.get("show_legend", True)
     show_title = kwargs.get("show_title", True)
     show_acq_func = kwargs.get("show_acq_func", False)
-    show_next_point = kwargs.get("show_next_point", False)
+    #show_next_point = kwargs.get("show_next_point", False)
     show_observations = kwargs.get("show_observations", True)
     show_mu = kwargs.get("show_mu", True)
     n_points = kwargs.get("n_points", 1000)
 
     if ax is None:
         ax = plt.gca()
-    n_dims = res.space.n_dims
     x0 = np.array([b[0] for b in res.space.transformed_bounds])
     x1 = np.array([b[1] for b in res.space.transformed_bounds])
     x = np.linspace(0,1,n_points)
     x_model = np.linspace(x0,x1,n_points)
     x = x.reshape(-1, 1)
     x_model = x_model.reshape(-1, res.space.n_dims)
-    x_proj = project_point(x_model,x0,x1)
+
+    acq_func_kwargs = None
+    acq_func = None
+    n_random = None
     if res.specs is not None and "args" in res.specs:
         n_random = res.specs["args"].get('n_random_starts', None)
         acq_func = res.specs["args"].get("acq_func", "EI")
@@ -209,6 +227,7 @@ def plot_gaussian_process(res, **kwargs):
     if n_random is None:
         n_random = len(res.x_iters) - len(res.models)
 
+    fx = None
     if objective is not None:
         fx = np.array([objective(x_i) for x_i in x_model])
     if n_calls < 0:
@@ -258,22 +277,23 @@ def plot_gaussian_process(res, **kwargs):
         ax_ei = ax
         plot_both = False
     if show_acq_func:
-        acq = _gaussian_acquisition(x_model, model,
-                                    y_opt=np.min(curr_func_vals),
-                                    acq_func=acq_func,
-                                    acq_func_kwargs=acq_func_kwargs)
-        next_x = x[np.argmin(acq)]
-        next_acq = acq[np.argmin(acq)]
-        acq = - acq
-        next_acq = -next_acq
-        ax_ei.plot(x, acq, "b", label=str(acq_func) + "(x)")
-        if not plot_both:
-            ax_ei.fill_between(x.ravel(), 0, acq.ravel(),
-                               alpha=0.3, color='blue')
+        raise NotImplementedError()
+        #acq = _gaussian_acquisition(x_model, model,
+        #                            y_opt=np.min(curr_func_vals),
+        #                            acq_func=acq_func,
+        #                            acq_func_kwargs=acq_func_kwargs)
+        #next_x = x[np.argmin(acq)]
+        #next_acq = acq[np.argmin(acq)]
+        #acq = - acq
+        #next_acq = -next_acq
+        #ax_ei.plot(x, acq, "b", label=str(acq_func) + "(x)")
+        #if not plot_both:
+        #    ax_ei.fill_between(x.ravel(), 0, acq.ravel(),
+        #                       alpha=0.3, color='blue')
 
-        if show_next_point and next_x is not None:
-            ax_ei.plot(next_x, next_acq, "bo", markersize=6,
-                       label="Next query point")
+        #if show_next_point and next_x is not None:
+        #    ax_ei.plot(next_x, next_acq, "bo", markersize=6,
+        #               label="Next query point")
 
     if show_title:
         ax.set_title(r"x* = %s, f(x*) = %.4f" % (res.x, res.fun))
@@ -312,8 +332,9 @@ def load_past_experiment_results(cls, root_dir, search_space, score_fn, normaliz
 
 ##################################################
 
-class Search(ABC):
-    def __init__(self, cls,
+class Search(ABC, Generic[ExpType]):
+    def __init__(self,
+            cls : Type[ExpType],
             search_space: Mapping,
             maximize: bool = False,
             **exp_runner_kwargs):
@@ -345,12 +366,15 @@ class GridSearch(Search):
         if name is None:
             name = 'GridSearch-%s' % cls.__name__
         self.root_directory = root_directory
-        self.directory = find_next_free_dir(
-                self.root_directory, '{}-%d'.format(name))
+        if output_directory is None:
+            self.directory = find_next_free_dir(
+                    self.root_directory, '{}-%d'.format(name))
+        else:
+            self.directory = output_directory
     def run(self):
         keys = self.search_space.keys()
         all_vals = list(itertools.product(*[self.search_space[k].linspace() for k in keys]))
-        for i,vals in enumerate(all_vals):
+        for vals in all_vals:
             config = {k:v for k,v in zip(keys,vals)}
             exp = ExperimentRunner(self.cls,
                     root_directory=os.path.join(self.directory,'Experiments'),
@@ -362,7 +386,7 @@ class RandomSearch(Search):
             search_space: Mapping,
             name: str = None,
             root_directory: str = './results',
-            output_directory: str = None,
+            output_directory: Optional[str] = None,
             search_budget: int = 10,
             **exp_runner_kwargs):
         """
@@ -376,8 +400,11 @@ class RandomSearch(Search):
         if name is None:
             name = 'RandomSearch-%s' % cls.__name__
         self.root_directory = root_directory
-        self.directory = find_next_free_dir(
-                self.root_directory, '{}-%d'.format(name))
+        if output_directory is None:
+            self.directory = find_next_free_dir(
+                    self.root_directory, '{}-%d'.format(name))
+        else:
+            self.directory = output_directory
         self.search_space = normalize_search_space(search_space)
         self.search_budget = search_budget
     def run(self):
@@ -389,9 +416,10 @@ class RandomSearch(Search):
             exp.run()
 
 class BayesianOptimizationSearch(Search):
-    def __init__(self, cls,
+    def __init__(self,
+            cls : Type[ExpType],
             search_space: Mapping,
-            score_fn: Callable[[Experiment],int],
+            score_fn: Callable[[ExpType],Union[int,float]],
             name: str = None,
             search_budget: int = 5,
             kernel = Matern(length_scale=1,nu=2.5,length_scale_bounds='fixed'),
@@ -414,15 +442,12 @@ class BayesianOptimizationSearch(Search):
         self.results = None
         self.expected_min = None
     def run(self):
-        import skopt
         from skopt import gp_minimize
         # Parameters
         exp_runner_root_dir = os.path.join(self.directory,'Experiments')
         os.makedirs(exp_runner_root_dir,exist_ok=True)
         # Check if there's already existing results to load
         x0,y0 = load_past_experiment_results(self.cls, exp_runner_root_dir, self.search_space, self.score_fn, normalized=False)
-        # Bounds
-        bounds = search_space_bounds(self.search_space)
         # Objective function
         def objective_fn(x):
             config = vector_to_config_dict(self.search_space, x)
@@ -467,10 +492,13 @@ class Analysis(ABC):
 
 class SimpleAnalysis(Analysis):
     """ Treat all runs as independent runs. """
-    def __init__(self, cls,
-            score_fn: Callable[[Experiment],int],
-            maximize=False,
-            directory: str = None):
+    def __init__(self,
+            cls : Type[ExpType],
+            score_fn: Callable[[ExpType],Union[int,float]],
+            maximize : bool = False,
+            directory : Optional[str] = None):
+        if directory is None:
+            raise Exception('Output directory must be specified.')
         self.directory = directory
         self.score_fn = score_fn
         self.maximize = maximize
@@ -490,6 +518,8 @@ class SimpleAnalysis(Analysis):
     def _sort_results(self):
         if self.results is None:
             self._load_results()
+        if self.results is None:
+            raise Exception('This should never happen. This is only here to make pyright happy.')
         if self.sorted_results is not None:
             return
         sorted_results = sorted(
@@ -500,19 +530,22 @@ class SimpleAnalysis(Analysis):
         self.sorted_results = sorted_results
     def get_best_config(self):
         self._sort_results()
-        score,config = self.sorted_results[0]
+        _,config = self.sorted_results[0]
         return config
     def get_best_score(self):
         self._sort_results()
-        score,config = self.sorted_results[0]
+        score,_ = self.sorted_results[0]
         return score
 
 class GroupedAnalysis(Analysis):
     """ Group together runs that use the same hyperparameters. """
-    def __init__(self, cls,
-            score_fn: Callable[[Experiment],int],
+    def __init__(self,
+            cls : Type[ExpType],
+            score_fn: Callable[[ExpType],Union[int,float]],
             maximize=False,
-            directory: str = None):
+            directory: Optional[str] = None):
+        if directory is None:
+            raise Exception('Output directory must be specified.')
         self.directory = directory
         self.score_fn = score_fn
         self.maximize = maximize
@@ -543,17 +576,18 @@ class GroupedAnalysis(Analysis):
         self.sorted_results = sorted_results
     def get_best_config(self):
         self._sort_results()
-        config,score = self.sorted_results[0]
+        config,_ = self.sorted_results[0]
         return dict(config)
     def get_best_score(self):
         self._sort_results()
-        config,score = self.sorted_results[0]
+        _,score = self.sorted_results[0]
         return score
 
 class GaussianProcessAnalysis(Analysis):
     """ Fit a Gaussian Process to the results. """
-    def __init__(self, cls,
-            score_fn: Callable[[Experiment],int],
+    def __init__(self,
+            cls : Type[ExpType],
+            score_fn: Callable[[ExpType],Union[int,float]],
             search_space: Mapping,
             maximize=False,
             kernel = Matern(length_scale=1,nu=2.5,length_scale_bounds='fixed'),
@@ -602,16 +636,21 @@ class GaussianProcessAnalysis(Analysis):
         self.best_result = (opt_result.fun.item(), best_config)
     def get_best_config(self):
         self._find_optimum()
-        score,config = self.best_result
+        if self.best_result is None:
+            raise Exception('This should never happen. This is only here to make pyright happy.')
+        _,config = self.best_result
         return config
     def get_best_score(self):
         self._find_optimum()
-        score,config = self.best_result
+        if self.best_result is None:
+            raise Exception('This should never happen. This is only here to make pyright happy.')
+        score,_ = self.best_result
         return score
     def compute_scores(self, config, normalized=False):
         gpr = self._fit_model()
         if isinstance(config, Mapping):
-            x = self.skopt_search_space.transform(config_dict_to_vector(config))
+            # x = self.skopt_search_space.transform(config_dict_to_vector(config)) # FIXME: wtf was I trying to do here?
+            raise NotImplementedError()
         else:
             if normalized:
                 x = config
@@ -656,7 +695,9 @@ class GaussianProcessAnalysis(Analysis):
             plt.plot(x_plot,y,color='red', label='LCB Acquisition Function')
 
         # mean
-        y,std = gpr.predict(x, return_std=True)
+        prediction = gpr.predict(x, return_std=True)
+        y = prediction[0]
+        std = prediction[1]
         if show_gp_std:
             plt.fill_between(x_plot,y-std,y+std, alpha=0.2)
         if show_gp_mean:
