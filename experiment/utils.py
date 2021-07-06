@@ -54,10 +54,15 @@ def dill_dump_rolling(obj : Any, filenames : List[str]):
     Args:
         filenames: A list of paths, where the first element is the name given to the most recent save.
     """
+    rename_queue = []
     if os.path.isfile(filenames[0]):
         for src,dst in zip(reversed(filenames[:-1]),reversed(filenames)):
             if os.path.isfile(src):
-                os.rename(src=src,dst=dst)
+                rename_queue.append((src,dst))
+            else:
+                rename_queue.clear()
+    for src,dst in rename_queue:
+        os.rename(src=src,dst=dst)
     with open(filenames[0],'wb') as f:
         dill.dump(obj,f)
 
@@ -66,9 +71,12 @@ def dill_load_rolling(filenames : List[str]):
     Load the most recent file from the list of filenames. If loading fails, then try the next file until one of them works.
     """
     for filename in filenames:
+        if not os.path.isfile(filename):
+            continue
         try:
             with open(filename,'rb') as f:
                 return dill.load(f)
-        except:
-            continue
+        except dill.UnpicklingError:
+            # Delete corrupted files so they don't overwrite valid saves
+            os.remove(filename)
     raise Exception('Unable to find a valid file to load.')
