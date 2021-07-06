@@ -66,7 +66,7 @@ def test_rolling_save_corrupt_first_file(tmpdir):
     dill_dump_rolling(obj2, filenames)
 
     with open(filenames[0], "r+b") as f:
-        f.seek(5)
+        f.seek(0)
         f.write(b'asdf')
     obj = dill_load_rolling(filenames)
     assert obj == obj1
