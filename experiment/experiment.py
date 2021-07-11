@@ -187,6 +187,7 @@ def make_experiment_runner(cls : Type[ExpType],
             max_iterations : Optional[int] = None,
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
+            num_checkpoints : int = 2,
             config : Mapping = {}) -> ExperimentRunner[ExpType]:
 
     experiment_name = experiment_name or cls.__name__
@@ -200,7 +201,7 @@ def make_experiment_runner(cls : Type[ExpType],
 
     checkpoint_filename = directories['checkpoint']
     if not os.path.isfile(checkpoint_filename):
-        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,config=config)
+        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,config=config)
 
     return load_checkpoint(cls,checkpoint_filename)
 
