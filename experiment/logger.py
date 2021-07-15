@@ -1,5 +1,5 @@
 class Logger:
-    def __init__(self, key_name=None, manual_iteration=False, overwrite=False):
+    def __init__(self, key_name=None, manual_iteration=False, overwrite=False, allow_implicit_key=False):
         """
         Args:
             key_name: Name of a logged value that is unique for each iteration.
@@ -7,10 +7,12 @@ class Logger:
                 If not specified, then each call to `Logger.log` is assumed to be a distinct iteration.
                 Can be a list of strings if multiple keys form the iteration's identifier, in which case, at least one of the listed values have to be different between iterations.
             overwrite: If set to `True`, then when values are logged for the same key and both values cannot be saved, the latest logged value will overwrite the existing values. If `False`, then an exception will be raised instead.
+            allow_implicit_key (bool): If set to `True`, then the key needs only be specified when it changes. If unspecified, then it is assumed to be unchanged. If set to `False`, then the key must always be present.
         """
         self.key_name = key_name
         self.manual_iteration = manual_iteration
         self.overwrite = overwrite
+        self.allow_implicit_key = allow_implicit_key
 
         self.data = []
 
@@ -38,12 +40,18 @@ class Logger:
             return True
         if type(self.key_name) is str:
             if self.key_name not in data.keys():
-                raise Exception('`key_name` is specified as "%s", but this key is not present in the logged data.' % self.key_name)
+                if self.allow_implicit_key:
+                    return False
+                else:
+                    raise Exception('`key_name` is specified as "%s", but this key is not present in the logged data.' % self.key_name)
             return data[self.key_name] != self.data[-1][self.key_name]
         if type(self.key_name) is list:
             for k in self.key_name:
                 if k not in data.keys():
-                    raise Exception('`key_name` is specified as "%s", but "%s" is not present in the logged data.' % (self.key_name, k))
+                    if self.allow_implicit_key:
+                        return False
+                    else:
+                        raise Exception('`key_name` is specified as "%s", but "%s" is not present in the logged data.' % (self.key_name, k))
                 if data[k] != self.data[-1][k]:
                     return True
             return False

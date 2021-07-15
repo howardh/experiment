@@ -77,3 +77,29 @@ def test_repeat_key_with_overwrite():
     logger.log(time=0, score=1, result=3)
     assert logger[-1] == {'time': 0, 'score': 1, 'result': 3}
     assert len(logger) == 1
+
+def test_log_data_implicit_key():
+    logger = Logger(key_name='key', allow_implicit_key=True)
+    assert len(logger) == 0
+
+    # Key with data
+    logger.log(key=0, score=1)
+    assert logger[-1] == {'key': 0, 'score': 1}
+    assert len(logger) == 1
+
+    logger.log(foo=1.2)
+    assert logger[-1] == {'key': 0, 'score': 1, 'foo': 1.2}
+    assert len(logger) == 1
+
+    logger.log(key=1, score=1.3)
+    assert logger[-1] == {'key': 1, 'score': 1.3}
+    assert logger[-2] == {'key': 0, 'score': 1, 'foo': 1.2}
+    assert len(logger) == 2
+
+    # Key separately from data
+    logger.log(key=2)
+    logger.log(score=1.4)
+    assert logger[-1] == {'key': 2, 'score': 1.4}
+    assert logger[-2] == {'key': 1, 'score': 1.3}
+    assert logger[-3] == {'key': 0, 'score': 1, 'foo': 1.2}
+    assert len(logger) == 3
