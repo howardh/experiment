@@ -5,6 +5,7 @@ import itertools
 import pprint
 from abc import ABC, abstractmethod
 from typing import Optional, Type, Mapping, TypeVar, Generic
+import warnings
 
 import dill
 from tqdm import tqdm
@@ -222,9 +223,12 @@ def load_checkpoint(cls, path):
     cls_name = state['args'].pop('cls')
     parent_cls_names = (str(parent_cls_name) for parent_cls_name in cls.__bases__)
     if cls_name != str(cls) and cls_name not in parent_cls_names:
-        raise Exception('Experiment class mismatch. Expected %s. Found %s.' % (cls_name,cls))
+        warnings.warn('Experiment class mismatch. Expected %s. Found %s. Creating an experiment of type %s. This may not behave as expected.' % (cls_name,cls,cls))
 
     # Create experiment runner with
+    if 'epoch' in state['args']:
+        warnings.warn('`epoch` parameter found in loaded state. Ignoring parameter.')
+        del state['args']['epoch']
     exp = ExperimentRunner(cls, **state['args']) # cls needs to be passed as a positional argument, otherwise it fails in python 3.7. See https://stackoverflow.com/questions/62235830/why-is-the-cls-keyword-attribute-reserved-when-using-typing-generic-in-python
     exp.load_state_dict(state)
     return exp
