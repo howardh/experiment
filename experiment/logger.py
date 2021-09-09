@@ -1,11 +1,18 @@
 from typing import Union, List
+import warnings
+
+try:
+    import wandb
+except:
+    pass
 
 class Logger:
     def __init__(self,
             key_name : Union[str, List[str]] = None,
             manual_iteration : bool = False,
             overwrite : bool = False,
-            allow_implicit_key : bool = False):
+            allow_implicit_key : bool = False,
+            wandb_params : dict = None):
         """
         Args:
             key_name: Name of a logged value that is unique for each iteration.
@@ -19,9 +26,15 @@ class Logger:
         self.manual_iteration = manual_iteration
         self.overwrite = overwrite
         self.allow_implicit_key = allow_implicit_key
+        self._wandb_params = wandb_params
 
         self.data = []
         self.keys = set()
+
+        if wandb_params is not None:
+            self._wandb_run = wandb.init(**wandb_params)
+        else:
+            self._wandb_run = None
 
     def __getitem__(self,index : Union[str,int]):
         if type(index) is str:
@@ -101,6 +114,18 @@ class Logger:
                     raise Exception('Key "%s" already exists for this iteration.' % k)
             self.data[-1][k] = v
             self.keys.add(k)
+        # W&B logging
+        if self._wandb_run is not None:
+            if type(self.key_name) is str:
+                if self.key_name in data:
+                    key_val = data[self.key_name]
+                elif self.allow_implicit_key:
+                    key_val = self.data[-1][self.key_name]
+                else:
+                    raise Exception('Key not found')
+                self._wandb_run.log(data, step=key_val)
+            else:
+                self._wandb_run.log(data)
             
     def append(self,**data):
         if self._did_key_change(data) and not self.manual_iteration:
@@ -119,6 +144,8 @@ class Logger:
             else:
                 self.data[-1][k] = [v]
             self.keys.add(k)
+        if self._wandb_run is not None:
+            warnings.warn('`append` does not support logging to W&B.')
 
     def mean(self, key) -> float:
         total = 0
@@ -130,13 +157,17 @@ class Logger:
         return total/count
 
     def state_dict(self):
-        return {
+        output = {
                 'data': self.data,
                 'manual_iteration': self.manual_iteration,
                 'key_name': self.key_name,
                 'keys': self.keys,
         }
-    def load_state_dict(self, state):
+        if self._wandb_run is not None:
+            output['wandb_params'] = self._wandb_params
+            output['wandb_run_id'] = self._wandb_run.id
+        return output
+    def load_state_dict(self, state, include_wandb=True):
         self.data = state.get('data', [])
         self.key_name = state.get('key_name', None)
         self.manual_iteration = state.get('manual_iteration', False)
@@ -146,3 +177,11 @@ class Logger:
             for d in self.data:
                 for k in d.keys():
                     self.keys.add(k)
+        if include_wandb:
+            if 'wandb_params' in state:
+                wandb_params = state['wandb_params']
+                self._wandb_run = wandb.init(
+                        project=wandb_params['project'],
+                        entity=wandb_params['entity'],
+                        id=state['wandb_run_id'],
+                        resume='must')
