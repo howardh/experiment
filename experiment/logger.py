@@ -40,7 +40,7 @@ class Logger:
         else:
             self._wandb_run = None
 
-    def __getitem__(self,index : Union[str,int]):
+    def __getitem__(self, index : Union[str,int,slice]):
         if type(index) is str:
             if index not in self.keys:
                 raise KeyError('Key %s not found in logs.' % index)
@@ -55,6 +55,8 @@ class Logger:
                 x.append(d[self.key_name])
             return x,y
         elif type(index) is int:
+            return self.data[index]
+        elif type(index) is slice:
             return self.data[index]
         else:
             raise TypeError('Unable to handle index of type %s' % type(index))
