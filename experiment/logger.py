@@ -26,10 +26,14 @@ class Logger:
         self.manual_iteration = manual_iteration
         self.overwrite = overwrite
         self.allow_implicit_key = allow_implicit_key
-        self._wandb_params = wandb_params
 
         self.data = []
         self.keys = set()
+
+        self.init_wandb(wandb_params)
+
+    def init_wandb(self, wandb_params):
+        self._wandb_params = wandb_params
 
         if wandb_params is not None:
             self._wandb_run = wandb.init(**wandb_params)
