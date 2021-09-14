@@ -44,15 +44,18 @@ class Logger:
         if type(index) is str:
             if index not in self.keys:
                 raise KeyError('Key %s not found in logs.' % index)
-            if type(self.key_name) is not str:
+            if type(self.key_name) is not str and self.key_name is not None:
                 raise NotImplementedError('')
             x = []
             y = []
-            for d in self.data:
+            for i,d in enumerate(self.data):
                 if index not in d:
                     continue
                 y.append(d[index])
-                x.append(d[self.key_name])
+                if self.key_name is None:
+                    x.append(i)
+                else:
+                    x.append(d[self.key_name])
             return x,y
         elif type(index) is int:
             return self.data[index]
@@ -132,7 +135,7 @@ class Logger:
                 self._wandb_run.log(data, step=key_val)
             else:
                 self._wandb_run.log(data)
-            
+
     def append(self,**data):
         if self._did_key_change(data) and not self.manual_iteration:
             self.data.append({})

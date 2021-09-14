@@ -4,62 +4,7 @@ import os
 import numpy as np
 
 from experiment.logger import Logger
-from experiment.plotter import plot, get_xy_data, LinearInterpResample, SplineSmoothing, EMASmoothing, GaussianSmoothing
-
-def test_log_data_plot():
-    logger = Logger()
-    logger.log(train_score=1, val_score=2)
-    logger.log(train_score=2)
-    logger.log(train_score=3)
-    logger.log(train_score=1, val_score=3)
-    logger.log(train_score=2)
-    logger.log(train_score=3)
-
-    x,y = get_xy_data(logger,'train_score')
-    assert y == [1,2,3,1,2,3]
-    assert x == [0,1,2,3,4,5]
-
-    x,y = get_xy_data(logger,'val_score')
-    assert y == [2,3]
-    assert x == [0,3]
-
-def test_log_data_with_key():
-    logger = Logger(key_name='iteration')
-    logger.log(iteration=0,train_score=1, val_score=2)
-    logger.log(iteration=1,train_score=2)
-    logger.log(iteration=2,train_score=3)
-    logger.log(iteration=3,train_score=1, val_score=3)
-    logger.log(iteration=4,train_score=2)
-    logger.log(iteration=5,train_score=3)
-
-    x,y = get_xy_data(logger,'train_score')
-    assert y == [1,2,3,1,2,3]
-    assert x == [0,1,2,3,4,5]
-
-    x,y = get_xy_data(logger,'val_score')
-    assert y == [2,3]
-    assert x == [0,3]
-
-def test_log_data_with_key_multiple_calls_per_iteration():
-    logger = Logger(key_name='iteration')
-
-    logger.log(iteration=0,val_score=2)
-    logger.log(iteration=0,train_score=1)
-    logger.log(iteration=1,train_score=2)
-    logger.log(iteration=2,train_score=3)
-
-    logger.log(iteration=3,val_score=3)
-    logger.log(iteration=3,train_score=1)
-    logger.log(iteration=4,train_score=2)
-    logger.log(iteration=5,train_score=3)
-
-    x,y = get_xy_data(logger,'train_score')
-    assert y == [1,2,3,1,2,3]
-    assert x == [0,1,2,3,4,5]
-
-    x,y = get_xy_data(logger,'val_score')
-    assert y == [2,3]
-    assert x == [0,3]
+from experiment.plotter import plot, LinearInterpResample, SplineSmoothing, EMASmoothing, GaussianSmoothing
 
 ##################################################
 # Smooth data (Linear)

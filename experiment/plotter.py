@@ -1,5 +1,6 @@
 import numpy as np
-from typing import List, Mapping, Union, Tuple
+from typing import List, Mapping, Union, Tuple, Callable
+from typing_extensions import TypedDict
 import warnings
 
 import matplotlib
@@ -9,19 +10,6 @@ from scipy.ndimage.filters import gaussian_filter1d
 from scipy.interpolate import make_interp_spline
 
 from experiment.logger import Logger
-
-##################################################
-# Extract data
-##################################################
-
-def get_xy_data(logger : Logger, key : str):
-    x = []
-    y = []
-    for i,v in enumerate(logger.data):
-        if key in v:
-            y.append(v[key])
-            x.append(i)
-    return x,y
 
 ##################################################
 # Smooth data
@@ -104,7 +92,13 @@ class ComposeTransforms(SeriesTransform):
 # Plot data
 ##################################################
 
-def plot(logger : Logger, curves : List[Union[str,Mapping]], filename : str, min_points : int = 3):
+class Curve(TypedDict, total=False):
+    key : str
+    label : str
+    smooth_fn : Callable[[List[float],List[float]],Tuple[List[float],List[float]]]
+
+def plot(logger : Logger, curves : List[Union[str,Curve]], filename : str, min_points : int = 3,
+        xlabel : str = None, ylabel : str = None, title : str = None, yscale : str = 'linear'):
     """
     Args:
         logger (experiment.logger.Logger): `experiment.logger.Logger` object containing the data to be plotted.
@@ -112,6 +106,7 @@ def plot(logger : Logger, curves : List[Union[str,Mapping]], filename : str, min
             - The names of the keys of the `logger` data to be plotted in the y axis
             - Mappings where each element contains information for a single curve. The mapping can contain the following:
                 - key: Key of the value to plot in the y axis
+                - label: A string to identify this curve in the plot's legend
                 - smooth_fn: A `SmoothingFunction` to apply to the data
         filename (str): Where to save the plot image.
         min_points (int): Minimum number of points to be plotted. If fewer data points are available, then do nothing.
@@ -133,7 +128,7 @@ def plot(logger : Logger, curves : List[Union[str,Mapping]], filename : str, min
             key = curve.get('key')
             if not isinstance(key,str):
                 raise Exception('Expected a string as key. Found element of type %s.' % type(key))
-            x,y = get_xy_data(logger, key)
+            x,y = logger[key]
             # Check number of data points
             if len(x) < min_points:
                 continue
@@ -148,6 +143,10 @@ def plot(logger : Logger, curves : List[Union[str,Mapping]], filename : str, min
         if has_labels:
             plt.legend(loc='best')
         plt.grid()
+        plt.title(title)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.yscale(yscale)
         plt.savefig(filename)
         plt.close()
     elif isinstance(elem, str):
@@ -155,10 +154,14 @@ def plot(logger : Logger, curves : List[Union[str,Mapping]], filename : str, min
         for i,k in enumerate(curves):
             if not isinstance(k,str):
                 raise Exception('Expected a list of strings. Found element of type %s at index %d.' % (type(k),i))
-            x,y = get_xy_data(logger, k)
+            x,y = logger[k]
             if len(x) < min_points:
                 continue
             plt.plot(x,y)
         plt.grid()
+        plt.title(title)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.yscale(yscale)
         plt.savefig(filename)
         plt.close()

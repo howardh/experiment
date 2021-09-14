@@ -103,3 +103,39 @@ def test_log_data_implicit_key():
     assert logger[-2] == {'key': 1, 'score': 1.3}
     assert logger[-3] == {'key': 0, 'score': 1, 'foo': 1.2}
     assert len(logger) == 3
+
+def test_index_by_string_no_key():
+    """ Access elements under 'train_score' and 'val_score' with no key set on the logger.
+    """
+    logger = Logger()
+    logger.log(train_score=1, val_score=2)
+    logger.log(train_score=2)
+    logger.log(train_score=3)
+    logger.log(train_score=1, val_score=3)
+    logger.log(train_score=2)
+    logger.log(train_score=3)
+
+    x,y = logger['train_score']
+    assert y == [1,2,3,1,2,3]
+    assert x == [0,1,2,3,4,5]
+
+    x,y = logger['val_score']
+    assert y == [2,3]
+    assert x == [0,3]
+
+def test_index_by_string_with_key():
+    logger = Logger(key_name='iteration')
+    logger.log(iteration=3,train_score=1, val_score=2)
+    logger.log(iteration=4,train_score=2)
+    logger.log(iteration=5,train_score=3)
+    logger.log(iteration=6,train_score=1, val_score=3)
+    logger.log(iteration=7,train_score=2)
+    logger.log(iteration=8,train_score=3)
+
+    x,y = logger['train_score']
+    assert y == [1,2,3,1,2,3]
+    assert x == [3,4,5,6,7,8]
+
+    x,y = logger['val_score']
+    assert y == [2,3]
+    assert x == [3,6]
