@@ -4,7 +4,7 @@ import time
 import itertools
 import pprint
 from abc import ABC, abstractmethod
-from typing import Optional, Type, Mapping, TypeVar, Generic
+from typing import Optional, Type, Mapping, TypeVar, Generic, List
 import warnings
 
 import dill
@@ -75,7 +75,8 @@ class ExperimentRunner(Generic[ExpType]):
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
             num_checkpoints : int = 2,
-            config : Mapping = {}):
+            config : Mapping = {},
+            non_picklable_config : List = []):
         """
         Args:
             cls (Experiment): The class defining the experiment to run.
@@ -89,6 +90,7 @@ class ExperimentRunner(Generic[ExpType]):
             checkpoint_frequency (int): Number of steps between each saved checkpoint.
             num_checkpoints (int): The number of checkpoints to keep on disk.
             config (collections.abc.Mapping): Parameters that are passed to the experiment's `setup` method.
+            non_picklable_config (list): A list of config keys associated with values that are not picklable. These values will be omitted from the checkpoint file.
         """
         kwargs = locals()
         del kwargs['self']
@@ -103,6 +105,7 @@ class ExperimentRunner(Generic[ExpType]):
         self.checkpoint_frequency = checkpoint_frequency
         self.max_iterations = max_iterations
         self.num_checkpoints = num_checkpoints
+        self.non_picklable_config = non_picklable_config
 
         directories = get_experiment_directories(
                 root_directory=self.root_directory,
@@ -161,6 +164,10 @@ class ExperimentRunner(Generic[ExpType]):
             'args': {
                 **self.args,
                 'cls': str(self.args['cls']),
+                'config': {
+                    k:v for k,v in self.args['config'].items()
+                    if k not in self.non_picklable_config
+                },
                 'results_directory': self.results_directory,
             },
             'steps': self.steps,
@@ -189,7 +196,11 @@ def make_experiment_runner(cls : Type[ExpType],
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
             num_checkpoints : int = 2,
-            config : Mapping = {}) -> ExperimentRunner[ExpType]:
+            config : Mapping = {},
+            non_picklable_config : List = []) -> ExperimentRunner[ExpType]:
+    """ Create an experiment runner. If there is already an existing experiment with the  same experiment name and ID, then resume that execution instead of creating a new one.
+    Parameters are the same as `ExperimentRunner`.
+    """
 
     experiment_name = experiment_name or cls.__name__
 
@@ -200,13 +211,25 @@ def make_experiment_runner(cls : Type[ExpType],
             trial_id=trial_id
     )
 
-    checkpoint_filename = directories['checkpoint']
-    if not os.path.isfile(checkpoint_filename):
-        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,config=config)
+    # Do not overwrite data unless we're certain that there's no useful data here.
+    # i.e. Do not make a new experiment unless directory does not exist or is empty.
+    if os.path.isdir(directories['results']) and len(os.listdir(directories['results'])) > 0:
+        # This will error if it is unable to load 
+        return load_checkpoint(cls,directories['results'],extra_configs={k:config[k] for k in non_picklable_config})
+    else:
+        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,config=config,non_picklable_config=non_picklable_config)
 
-    return load_checkpoint(cls,checkpoint_filename)
 
-def load_checkpoint(cls, path):
+def load_checkpoint(cls, path, extra_configs={}):
+    """
+    Load a checkpoint at the given path. If it is unable to load one, raise an exception.
+
+    Args:
+        cls (`Experiment`): Class of the `Experiment` to be loaded.
+        path (str): Path to the experiment's root directory.
+        extra_configs (dict): Experiment configs that will overwrite checkpoint configs.
+            Use case: assign values to configs that couldn't be pickled.
+    """
     if os.path.isfile(path):
         with open(path,'rb') as f:
             state = dill.load(f)
@@ -229,6 +252,13 @@ def load_checkpoint(cls, path):
     if 'epoch' in state['args']:
         warnings.warn('`epoch` parameter found in loaded state. Ignoring parameter.')
         del state['args']['epoch']
-    exp = ExperimentRunner(cls, **state['args']) # cls needs to be passed as a positional argument, otherwise it fails in python 3.7. See https://stackoverflow.com/questions/62235830/why-is-the-cls-keyword-attribute-reserved-when-using-typing-generic-in-python
+    args = {
+        **state['args'],
+        'config': {
+            **extra_configs,
+            **state['args']['config']
+        }
+    }
+    exp = ExperimentRunner(cls, **args) # cls needs to be passed as a positional argument, otherwise it fails in python 3.7. See https://stackoverflow.com/questions/62235830/why-is-the-cls-keyword-attribute-reserved-when-using-typing-generic-in-python
     exp.load_state_dict(state)
     return exp

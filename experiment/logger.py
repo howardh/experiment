@@ -187,10 +187,11 @@ class Logger:
                 for k in d.keys():
                     self.keys.add(k)
         if include_wandb:
-            if 'wandb_params' in state:
-                wandb_params = state['wandb_params']
-                self._wandb_run = wandb.init(
-                        project=wandb_params['project'],
-                        entity=wandb_params['entity'],
-                        id=state['wandb_run_id'],
-                        resume='must')
+            # We cannot currently resume W&B logging. If the run has logged data between the last checkpoint and when it was killed, that data will still be logged on W&B, and we can't overwrite them.
+            pass
+            #if 'wandb_params' in state:
+            #    wandb_params = state['wandb_params']
+            #    self._wandb_run = wandb.init(
+            #            project=wandb_params['project'],
+            #            id=state['wandb_run_id'],
+            #            resume='must')
