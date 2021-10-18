@@ -1,12 +1,29 @@
+from abc import ABC, abstractmethod
 from typing import Union, List
 import warnings
+
+import numpy as np
 
 try:
     import wandb
 except:
     pass
 
-class Logger:
+class BaseLogger(ABC):
+    @abstractmethod
+    def __getitem__(self, index): ...
+    @abstractmethod
+    def __len__(self): ...
+    @abstractmethod
+    def __iter__(self): ...
+    @abstractmethod
+    def __reversed__(self): ...
+    @abstractmethod
+    def log(self,**data): ...
+    @abstractmethod
+    def append(self,**data): ...
+
+class Logger(BaseLogger):
     def __init__(self,
             key_name : Union[str, List[str]] = None,
             manual_iteration : bool = False,
@@ -31,6 +48,7 @@ class Logger:
         self.keys = set()
 
         self.init_wandb(wandb_params)
+        self._multival_keys = set()
 
     def init_wandb(self, wandb_params):
         self._wandb_params = wandb_params
@@ -112,11 +130,11 @@ class Logger:
     def next_iteration(self):
         if not self.manual_iteration:
             raise Exception('`manual_iteration` has to be set to `True` to use next_iteration.')
-        self.data.append({})
+        self._on_key_change()
 
     def log(self,**data):
         if self._did_key_change(data) and not self.manual_iteration:
-            self.data.append({})
+            self._on_key_change()
         for k,v in data.items():
             if k in self.data[-1]:
                 if not self._is_logger_key(k) and not self.overwrite:
@@ -138,7 +156,7 @@ class Logger:
 
     def append(self,**data):
         if self._did_key_change(data) and not self.manual_iteration:
-            self.data.append({})
+            self._on_key_change()
         for k,v in data.items():
             if self._is_logger_key(k):
                 self.data[-1][k] = v
@@ -153,8 +171,35 @@ class Logger:
             else:
                 self.data[-1][k] = [v]
             self.keys.add(k)
+            self._multival_keys.add(k)
         if self._wandb_run is not None:
             warnings.warn('`append` does not support logging to W&B.')
+
+    def _sync_wandb_multival(self):
+        """ Aggregate and sync multivalue data (i.e. data added using `append`) with W&B. """
+        if self._wandb_run is None:
+            return
+        if type(self.key_name) is not str:
+            return
+        if len(self.data) == 0:
+            return
+        if self.key_name not in self.data[-1]:
+            return
+
+        key_val = self.data[-1][self.key_name]
+        data = {}
+        for k in self._multival_keys:
+            try:
+                data[k] = np.mean(self.data[-1][k])
+            except:
+                pass
+        self._wandb_run.log(data, step=key_val)
+
+    def _on_key_change(self):
+        # Make appropriate aggregations for W&B
+        self._sync_wandb_multival()
+        # New data point
+        self.data.append({})
 
     def mean(self, key) -> float:
         total = 0
@@ -164,6 +209,9 @@ class Logger:
                 total += d[key]
                 count += 1
         return total/count
+
+    def make_sublogger(self, prefix):
+        return SubLogger(self, prefix)
 
     def state_dict(self):
         output = {
@@ -195,3 +243,28 @@ class Logger:
             #            project=wandb_params['project'],
             #            id=state['wandb_run_id'],
             #            resume='must')
+
+class SubLogger(BaseLogger):
+    """ A logger """
+    def __init__(self, parent_logger : Logger, prefix : str):
+        if not parent_logger.allow_implicit_key:
+            raise Exception('SubLoggers will not work unless the parent logger allows implicit keys. Set `allow_implicit_key` to True.')
+        self.parent_logger = parent_logger
+        self.prefix = prefix
+    def __getitem__(self, index : Union[str,int,slice]):
+        if isinstance(index,str):
+            return self.parent_logger[f'{self.prefix}{index}']
+        return self.parent_logger[index]
+    def __len__(self):
+        raise NotImplementedError('Not sure how I want this to behave yet.')
+    def __iter__(self):
+        raise NotImplementedError('Not sure how I want this to behave yet.')
+    def __reversed__(self):
+        raise NotImplementedError('Not sure how I want this to behave yet.')
+
+    def log(self, **data):
+        prefixed_data = {f'{self.prefix}{k}':v for k,v in data.items()}
+        self.parent_logger.log(**prefixed_data)
+    def append(self, **data):
+        prefixed_data = {f'{self.prefix}{k}':v for k,v in data.items()}
+        self.parent_logger.append(**prefixed_data)
