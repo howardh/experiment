@@ -5,3 +5,5 @@ htmlcov
 .coverage
 .vim
 Session.vim
+wandb
+.coverage.*

@@ -57,6 +57,9 @@ class Logger(BaseLogger):
             self._wandb_run = wandb.init(**wandb_params)
         else:
             self._wandb_run = None
+    def finish_wandb(self, *args, **kwargs):
+        if self._wandb_run is not None:
+            self._wandb_run.finish(*args, **kwargs)
 
     def __getitem__(self, index : Union[str,int,slice]):
         if type(index) is str:
