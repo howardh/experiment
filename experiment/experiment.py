@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Type, Mapping, TypeVar, Generic, List
 import warnings
 
+import numpy as np
 import dill
 from tqdm import tqdm
 
@@ -27,14 +28,30 @@ class Experiment(ABC): # pragma: no cover
         pass
 
 def get_experiment_directories(*,
-        root_directory, results_directory, experiment_name, trial_id):
+        root_directory, results_directory, experiment_name, trial_id, slurm_split=False):
     if results_directory is None:
         if trial_id is None:
-            trial_id = time.strftime("%Y_%m_%d-%H_%M_%S")
-            results_directory = find_next_free_dir(
-                    root_directory,
-                    '{}-{}-%d'.format(experiment_name, trial_id)
-            )
+            slurm_job_id = os.environ.get('SLURM_JOB_ID') # Unique per job
+            slurm_array_job_id = os.environ.get('SLURM_ARRAY_JOB_ID') # Same for every job in an array
+            slurm_array_task_id = os.environ.get('SLURM_ARRAY_TASK_ID') # Unique per job in the array
+            if slurm_job_id is not None: # If it's a slurm job, use the job ID in the directory name
+                if slurm_array_job_id is not None:
+                    # `slurm_array_job_id` is None if it is not an array job
+                    if slurm_split:
+                        # If `slurm_split` is True, that means we want to run one experiment split over multiple jobs in an array, so every job in the array should have the same `trial_id`.
+                        trial_id = f'{slurm_array_job_id}'
+                    else:
+                        trial_id = f'{slurm_array_job_id}_{slurm_array_task_id}'
+                else:
+                    trial_id = f'{slurm_job_id}'
+                results_directory = os.path.join(
+                        root_directory, '{}-{}'.format(experiment_name, trial_id))
+            else: # If it is not a slurm job, use the data/time to name the directory
+                trial_id = time.strftime("%Y_%m_%d-%H_%M_%S")
+                results_directory = find_next_free_dir(
+                        root_directory,
+                        '{}-{}-%d'.format(experiment_name, trial_id)
+                )
         else:
             results_directory = os.path.join(
                     root_directory, '{}-{}'.format(experiment_name, trial_id))
@@ -75,6 +92,7 @@ class ExperimentRunner(Generic[ExpType]):
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
             num_checkpoints : int = 2,
+            slurm_split : bool = False,
             config : Mapping = {},
             non_picklable_config : List = []):
         """
@@ -89,6 +107,7 @@ class ExperimentRunner(Generic[ExpType]):
             max_iterations (int): The maximum number of iterations to run. If `None`, then there is no limit.
             checkpoint_frequency (int): Number of steps between each saved checkpoint.
             num_checkpoints (int): The number of checkpoints to keep on disk.
+            slurm_split (int): If set to a positive integer, the experiment will be split into multiple parts which can be run as individual jobs. The steps of the experiment are divided into `slurm_split` parts, and each part ends on a checkpoint.
             config (collections.abc.Mapping): Parameters that are passed to the experiment's `setup` method.
             non_picklable_config (list): A list of config keys associated with values that are not picklable. These values will be omitted from the checkpoint file.
         """
@@ -105,25 +124,48 @@ class ExperimentRunner(Generic[ExpType]):
         self.checkpoint_frequency = checkpoint_frequency
         self.max_iterations = max_iterations
         self.num_checkpoints = num_checkpoints
+        self.slurm_split = slurm_split
         self.non_picklable_config = non_picklable_config
 
         directories = get_experiment_directories(
                 root_directory=self.root_directory,
                 results_directory=self.results_directory,
                 experiment_name=experiment_name,
-                trial_id=trial_id
+                trial_id=trial_id,
+                slurm_split=slurm_split
         )
         self.results_directory = directories['results']
         self.checkpoint_file_path = directories['checkpoint']
         self.experiment_output_directory = directories['output']
         os.makedirs(self.experiment_output_directory, exist_ok=True)
 
+        # Steps iterator
         self.steps = 0
         if self.max_iterations is None:
             self.step_range = itertools.count(self.steps)
         else:
             self.step_range = range(self.steps,self.max_iterations)
 
+        # Slurm split
+        self._terminate_on_step = None
+        if self.slurm_split:
+            if self.max_iterations is None:
+                raise Exception('Cannot split the experiment. A maximum number of iterations must be set via the `max_iterations` argument.')
+            if self.checkpoint_frequency is None:
+                raise Exception('Cannot split the experiment. Checkpointing must be enabled by giving a value to `checkpoint_frequency`.')
+            try:
+                task_id = int(os.environ['SLURM_ARRAY_TASK_ID'])
+                task_min = int(os.environ['SLURM_ARRAY_TASK_MIN'])
+                task_max = int(os.environ['SLURM_ARRAY_TASK_MAX'])
+            except KeyError:
+                raise Exception('`slurm_split` is set, but the script is not running as a Slurm job. One or more of the following environment variables are missing: "SLURM_ARRAY_TASK_ID", "SLURM_ARRAY_TASK_MIN", "SLURM_ARRAY_TASK_MAX"')
+            num_tasks = task_max-task_min+1
+            num_epochs = self.max_iterations/self.checkpoint_frequency
+            epochs_per_task = np.ceil(num_epochs/num_tasks)
+            task_index = task_id-task_min
+            self._terminate_on_step = (task_index+1)*epochs_per_task*self.checkpoint_frequency
+
+        # Experiment object
         cls = kwargs['cls']
         self.exp = cls()
         self.exp.setup(
@@ -147,6 +189,8 @@ class ExperimentRunner(Generic[ExpType]):
             self.steps = steps
             if self.checkpoint_frequency is not None and steps % self.checkpoint_frequency == 0:
                 self.save_checkpoint(self.checkpoint_file_path)
+            if self._terminate_on_step is not None and steps >= self._terminate_on_step:
+                break
             self.exp.run_step(steps)
         # Save final checkpoint
         if self.max_iterations is not None and self.steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
@@ -196,6 +240,7 @@ def make_experiment_runner(cls : Type[ExpType],
             verbose : bool = False,
             checkpoint_frequency : Optional[int] = 10000,
             num_checkpoints : int = 2,
+            slurm_split : bool = False,
             config : Mapping = {},
             non_picklable_config : List = []) -> ExperimentRunner[ExpType]:
     """ Create an experiment runner. If there is already an existing experiment with the  same experiment name and ID, then resume that execution instead of creating a new one.
@@ -208,7 +253,8 @@ def make_experiment_runner(cls : Type[ExpType],
             root_directory=root_directory,
             results_directory=results_directory,
             experiment_name=experiment_name,
-            trial_id=trial_id
+            trial_id=trial_id,
+            slurm_split=slurm_split
     )
 
     # Do not overwrite data unless we're certain that there's no useful data here.
@@ -217,7 +263,7 @@ def make_experiment_runner(cls : Type[ExpType],
         # This will error if it is unable to load 
         return load_checkpoint(cls,directories['results'],extra_configs={k:config[k] for k in non_picklable_config})
     else:
-        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,config=config,non_picklable_config=non_picklable_config)
+        return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,slurm_split=slurm_split,config=config,non_picklable_config=non_picklable_config)
 
 
 def load_checkpoint(cls, path, extra_configs={}):
