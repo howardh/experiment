@@ -112,9 +112,9 @@ def test_gaussian_smoothing_three_points():
 # Smooth data (EMA)
 ##################################################
 
-def test_ema_smoothing_three_points():
+def test_ema_smoothing():
     """ Check that it runs without errors """
-    func = EMASmoothing(points=4)
+    func = EMASmoothing()
     x = np.array([0,2,3])
     y = np.array([1,3,2])
     x,y = func(x,y)
@@ -167,5 +167,37 @@ def test_plot_curves_param(tmpdir):
             }
         ],
         filename=filename
+    )
+    assert os.path.isfile(filename)
+
+def test_plot_aggregate_curves(tmpdir):
+    """ Check that plotting runs without errors. """
+    output_dir = tmpdir.mkdir('output')
+
+    logger = Logger(key_name='step', allow_implicit_key=True)
+    logger.log(step=0)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=1)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=2)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=3)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+
+    filename=os.path.join(output_dir,'plot.png')
+    plot(
+        logger=logger,
+        curves=['val'],
+        filename=filename,
+        aggregate='mean',
+        show_raw=True
     )
     assert os.path.isfile(filename)
