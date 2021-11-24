@@ -198,6 +198,39 @@ def test_plot_aggregate_curves(tmpdir):
         curves=['val'],
         filename=filename,
         aggregate='mean',
-        show_raw=True
+    )
+    assert os.path.isfile(filename)
+
+def test_plot_with_smoothing(tmpdir):
+    """ Check that plotting runs without errors. """
+    output_dir = tmpdir.mkdir('output')
+
+    logger = Logger(key_name='step', allow_implicit_key=True)
+    logger.log(step=0)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=1)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=2)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.log(step=3)
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+    logger.append(val=np.random.rand())
+
+    filename=os.path.join(output_dir,'plot.png')
+    plot(
+        logger=logger,
+        curves=[{
+            'key': 'val',
+            'smooth_fn': EMASmoothing(0.9)
+        }],
+        filename=filename,
+        aggregate='mean',
     )
     assert os.path.isfile(filename)

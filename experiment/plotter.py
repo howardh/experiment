@@ -1,11 +1,11 @@
 import numpy as np
 from typing import List, Mapping, Union, Tuple, Callable
 from typing_extensions import TypedDict
-import warnings
 
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+import matplotlib.axes
 from scipy.ndimage.filters import gaussian_filter1d
 from scipy.interpolate import make_interp_spline
 
@@ -32,7 +32,6 @@ class GaussianSmoothing(SeriesTransform):
 
 class EMASmoothing(SeriesTransform):
     def __init__(self,weight=0.9):
-        warnings.warn('I haven\'t figured out how I want EMA smoothing to behave yet. Expect this to change.')
         self.weight=weight
     def __call__(self, x : np.ndarray, y : np.ndarray) -> Tuple[np.ndarray,np.ndarray]:
         weight = self.weight
@@ -40,7 +39,7 @@ class EMASmoothing(SeriesTransform):
         cur = y[0]
         ysmoothed.append(cur)
         for val in y[1:]:
-            cur = (1-weight)*cur + weight*val
+            cur = weight*cur + (1-weight)*val
             ysmoothed.append(cur)
         return np.array(x),np.array(ysmoothed)
 
@@ -94,19 +93,21 @@ class ComposeTransforms(SeriesTransform):
 class Curve(TypedDict, total=False):
     key : str
     label : str
-    smooth_fn : Callable[[List[float],List[float]],Tuple[List[float],List[float]]]
+    smooth_fn : Callable[[np.ndarray,np.ndarray],Tuple[np.ndarray,np.ndarray]]
 
 def plot(logger : Logger,
         curves : Union[List[str],List[Curve]],
-        filename : str,
+        filename : str = None,
         min_points : int = 3,
         xlabel : str = None,
         ylabel : str = None,
         title : str = None,
         yscale : str = 'linear',
         aggregate : str = None,
-        smooth : SeriesTransform = None,
-        show_raw : bool = True):
+        ax : matplotlib.axes.Axes = None,
+        show_unaggregated : bool = True,
+        show_unsmoothed : bool = True,
+        colour_index = 0):
     """
     Args:
         logger (experiment.logger.Logger): `experiment.logger.Logger` object containing the data to be plotted.
@@ -124,11 +125,16 @@ def plot(logger : Logger,
 
             - `None`: Plot the values as is with no aggregation.
             - "mean": Plot the mean of values in the list.
+
+        ax (matplotlib.axes.Axes): Axis on which to render the plot. If `None`, a new axis will be created.
+        colour_index (int): A number representing the colour to use for rendering this piece of data.
     """
     if not isinstance(curves, list):
         raise Exception('`curves` must be a list.')
     if len(curves) == 0:
         return
+    if ax is None and filename is None:
+        raise Exception('Either `filename` or `ax` must be provided.')
 
     # Type checking and consolidation
     normalized_curves = []
@@ -144,7 +150,12 @@ def plot(logger : Logger,
     colour = [u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd', u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf']
 
     # Plot
-    plt.figure()
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot()
+    else:
+        fig = None
+
     has_labels = False
     for i,curve in enumerate(normalized_curves):
         # Get data
@@ -156,37 +167,77 @@ def plot(logger : Logger,
         if len(x) < min_points:
             continue
 
+        ####################
         # Aggregation
+
+        # Plot unaggregated data
+        if aggregate is not None and show_unaggregated:
+            scatter_x = []
+            scatter_y = []
+            for a,b in zip(x,y_raw):
+                for c in b:
+                    scatter_x.append(a)
+                    scatter_y.append(c)
+            ax.scatter(scatter_x,scatter_y,c=colour[colour_index],alpha=0.3)
+        # Aggregate
         if aggregate == 'mean':
             y = [float(np.mean(v)) for v in y_raw]
         else:
             y = y_raw
+
+        ####################
+        # Smoothing
+
+        # Plot unsmoothed data
+        if 'smooth_fn' in curve and show_unsmoothed:
+            ax.plot(x,y,colour[colour_index],alpha=0.2)
         # Smooth data
         smooth_fn = curve.get('smooth_fn', lambda x,y: (x,y))
         x,y = smooth_fn(x,y)
 
-        # Plot data
+        ####################
+        # Final plot (processed data)
+
         label = curve.get('label')
         if label is not None:
             has_labels = True
-        # Raw data
-        scatter_x = []
-        scatter_y = []
-        for a,b in zip(x,y_raw):
-            for c in b:
-                scatter_x.append(a)
-                scatter_y.append(c)
-        plt.scatter(scatter_x,scatter_y,c=colour[0],label=label,alpha=0.3)
         # Processed data
-        plt.plot(x,y,colour[0],label=label,alpha=1)
+        ax.plot(x,y,colour[colour_index],label=label,alpha=1)
 
     if has_labels:
-        plt.legend(loc='best')
+        ax.legend(loc='best')
 
-    plt.grid()
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.yscale(yscale)
-    plt.savefig(filename)
-    plt.close()
+    ax.grid(True)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_yscale(yscale)
+    if fig is not None:
+        fig.savefig(filename)
+        plt.close()
+
+def stacked_area_plot(logger : Logger,
+        key : str,
+        filename : str = None,
+        normalize : bool = True,
+        ax : matplotlib.axes.Axes = None):
+    if ax is None and filename is None:
+        raise Exception('Either `filename` or `ax` must be provided.')
+
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.add_subplot()
+    else:
+        fig = None
+
+    data_x, data_y = logger[key]
+    data_y = np.array(data_y)
+
+    if normalize:
+        data_y = data_y/data_y.sum(1,keepdims=True)
+
+    plt.stackplot(data_x, *data_y.transpose())
+
+    if fig is not None:
+        fig.savefig(filename)
+        plt.close()
