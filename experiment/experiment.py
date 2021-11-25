@@ -2,7 +2,6 @@ import re
 import os
 import time
 import itertools
-import pprint
 from abc import ABC, abstractmethod
 from typing import Optional, Type, Mapping, TypeVar, Generic, List
 import warnings
@@ -113,89 +112,100 @@ class ExperimentRunner(Generic[ExpType]):
         """
         kwargs = locals()
         del kwargs['self']
-        self.args = kwargs
+        self._args = kwargs
 
-        self.config = config
-        self.experiment_name = experiment_name
-        self.root_directory = sub_env_var(root_directory)
-        self.results_directory = sub_env_var(results_directory)
+        self._config = config
+        self._experiment_name = experiment_name
+        self._root_directory = sub_env_var(root_directory)
+        self._results_directory = sub_env_var(results_directory)
         self.verbose = verbose
-        self.trial_id = sub_env_var(trial_id)
+        self._trial_id = sub_env_var(trial_id)
         self.checkpoint_frequency = checkpoint_frequency
         self.max_iterations = max_iterations
         self.num_checkpoints = num_checkpoints
-        self.slurm_split = slurm_split
-        self.non_picklable_config = non_picklable_config
+        self._slurm_split = slurm_split
+        self._non_picklable_config = non_picklable_config
 
         directories = get_experiment_directories(
-                root_directory=self.root_directory,
-                results_directory=self.results_directory,
+                root_directory=self._root_directory,
+                results_directory=self._results_directory,
                 experiment_name=experiment_name,
                 trial_id=trial_id,
                 slurm_split=slurm_split
         )
-        self.results_directory = directories['results']
-        self.checkpoint_file_path = directories['checkpoint']
-        self.experiment_output_directory = directories['output']
-        os.makedirs(self.experiment_output_directory, exist_ok=True)
+        self._results_directory = directories['results']
+        self._checkpoint_file_path = directories['checkpoint']
+        self._experiment_output_directory = directories['output']
+        os.makedirs(self._experiment_output_directory, exist_ok=True)
 
         # Steps iterator
-        self.steps = 0
-        if self.max_iterations is None:
-            self.step_range = itertools.count(self.steps)
-        else:
-            self.step_range = range(self.steps,self.max_iterations)
-
-        # Slurm split
-        self._terminate_on_step = None
-        if self.slurm_split:
-            if self.max_iterations is None:
-                raise Exception('Cannot split the experiment. A maximum number of iterations must be set via the `max_iterations` argument.')
-            if self.checkpoint_frequency is None:
-                raise Exception('Cannot split the experiment. Checkpointing must be enabled by giving a value to `checkpoint_frequency`.')
-            try:
-                task_id = int(os.environ['SLURM_ARRAY_TASK_ID'])
-                task_min = int(os.environ['SLURM_ARRAY_TASK_MIN'])
-                task_max = int(os.environ['SLURM_ARRAY_TASK_MAX'])
-            except KeyError:
-                raise Exception('`slurm_split` is set, but the script is not running as a Slurm job. One or more of the following environment variables are missing: "SLURM_ARRAY_TASK_ID", "SLURM_ARRAY_TASK_MIN", "SLURM_ARRAY_TASK_MAX"')
-            num_tasks = task_max-task_min+1
-            num_epochs = self.max_iterations/self.checkpoint_frequency
-            epochs_per_task = np.ceil(num_epochs/num_tasks)
-            task_index = task_id-task_min
-            self._terminate_on_step = (task_index+1)*epochs_per_task*self.checkpoint_frequency
+        self._steps = 0
 
         # Experiment object
         cls = kwargs['cls']
-        self.exp = cls()
-        self.exp.setup(
-                config=self.config,
-                output_directory=self.experiment_output_directory
+        self._exp = cls()
+        self._exp.setup(
+                config=self._config,
+                output_directory=self._experiment_output_directory
         )
+
+    @property
+    def _step_range(self):
+        # Create range
+        if self.max_iterations is None:
+            step_range = itertools.count(self._steps)
+        else:
+            step_range = range(self._steps,self.max_iterations)
+        # Use tqdm if verbose
+        if self.verbose:
+            if self.max_iterations is None:
+                step_range = tqdm(step_range)
+            else:
+                step_range = tqdm(step_range, total=self.max_iterations, initial=self._steps)
+        # Return
+        return step_range
+    @property
+    def _terminate_on_step(self):
+        if not self._slurm_split:
+            return None
+        if self.max_iterations is None:
+            raise Exception('Cannot split the experiment. A maximum number of iterations must be set via the `max_iterations` argument.')
+        if self.checkpoint_frequency is None:
+            raise Exception('Cannot split the experiment. Checkpointing must be enabled by giving a value to `checkpoint_frequency`.')
+        try:
+            task_id = int(os.environ['SLURM_ARRAY_TASK_ID'])
+            task_min = int(os.environ['SLURM_ARRAY_TASK_MIN'])
+            task_max = int(os.environ['SLURM_ARRAY_TASK_MAX'])
+        except KeyError:
+            raise Exception('`slurm_split` is set, but the script is not running as a Slurm job. One or more of the following environment variables are missing: "SLURM_ARRAY_TASK_ID", "SLURM_ARRAY_TASK_MIN", "SLURM_ARRAY_TASK_MAX"')
+        num_tasks = task_max-task_min+1
+        num_epochs = self.max_iterations/self.checkpoint_frequency
+        epochs_per_task = np.ceil(num_epochs/num_tasks)
+        task_index = task_id-task_min
+        return (task_index+1)*epochs_per_task*self.checkpoint_frequency
+    @property
+    def exp(self): return self._exp
+    @property
+    def config(self): return self._config
 
     def setup(self, **kwargs):
         kwargs = kwargs
         pass
 
     def run(self):
-        step_range = self.step_range
-        if self.verbose:
-            pprint.pprint(self.args)
-            if self.max_iterations is None:
-                step_range = tqdm(step_range)
-            else:
-                step_range = tqdm(step_range, total=self.max_iterations, initial=self.steps)
+        step_range = self._step_range
+        terminate_on_step = self._terminate_on_step
         for steps in step_range:
-            self.steps = steps
+            self._steps = steps
             if self.checkpoint_frequency is not None and steps % self.checkpoint_frequency == 0:
-                self.save_checkpoint(self.checkpoint_file_path)
-            if self._terminate_on_step is not None and steps >= self._terminate_on_step:
+                self.save_checkpoint(self._checkpoint_file_path)
+            if terminate_on_step is not None and steps >= terminate_on_step:
                 break
-            self.exp.run_step(steps)
+            self._exp.run_step(steps)
         # Save final checkpoint
-        if self.max_iterations is not None and self.steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
-            self.steps += 1
-            self.save_checkpoint(self.checkpoint_file_path)
+        if self.max_iterations is not None and self._steps == self.max_iterations-1: # Ensure that we've just reached the end of the previous loop, and did not call `run()` a second time.
+            self._steps += 1
+            self.save_checkpoint(self._checkpoint_file_path)
     def save_checkpoint(self, filename):
         results = self.state_dict()
         filenames = [filename] + ['%s.%d' % (filename,i) for i in range(self.num_checkpoints)]
@@ -206,29 +216,25 @@ class ExperimentRunner(Generic[ExpType]):
     def state_dict(self):
         output = {
             'args': {
-                **self.args,
-                'cls': str(self.args['cls']),
+                **self._args,
+                'cls': str(self._args['cls']),
                 'config': {
-                    k:v for k,v in self.args['config'].items()
-                    if k not in self.non_picklable_config
+                    k:v for k,v in self._args['config'].items()
+                    if k not in self._non_picklable_config
                 },
-                'results_directory': self.results_directory,
+                'results_directory': self._results_directory,
             },
-            'steps': self.steps,
-            'exp': self.exp.state_dict()
+            'steps': self._steps,
+            'exp': self._exp.state_dict()
         }
         return output
 
     def load_state_dict(self, state):
         # Experiment progress
         self.setup(**state.get('args'))
-        self.exp.load_state_dict(state.get('exp'))
+        self._exp.load_state_dict(state.get('exp'))
 
-        self.steps = state['steps']
-        if self.max_iterations is None:
-            self.step_range = itertools.count(self.steps)
-        else:
-            self.step_range = range(self.steps,self.max_iterations)
+        self._steps = state['steps']
 
 def make_experiment_runner(cls : Type[ExpType],
             *, # All following arguments must be named (i.e. cannot be positional)
@@ -242,9 +248,13 @@ def make_experiment_runner(cls : Type[ExpType],
             num_checkpoints : int = 2,
             slurm_split : bool = False,
             config : Mapping = {},
-            non_picklable_config : List = []) -> ExperimentRunner[ExpType]:
+            non_picklable_config : List = [],
+            modifiable : bool = False) -> ExperimentRunner[ExpType]:
     """ Create an experiment runner. If there is already an existing experiment with the  same experiment name and ID, then resume that execution instead of creating a new one.
     Parameters are the same as `ExperimentRunner`.
+
+    Args:
+        modifiable (bool): If set to True, the experiment parameters can be overwritten by new parameters. For example, if an experiment was originally run for 1 million steps, and `make_experiment_runner` was called with `max_iterations=2_000_000`, then the experiment will continue running for another million steps.
     """
 
     experiment_name = experiment_name or cls.__name__
@@ -261,7 +271,10 @@ def make_experiment_runner(cls : Type[ExpType],
     # i.e. Do not make a new experiment unless directory does not exist or is empty.
     if os.path.isdir(directories['results']) and len(os.listdir(directories['results'])) > 0:
         # This will error if it is unable to load 
-        return load_checkpoint(cls,directories['results'],extra_configs={k:config[k] for k in non_picklable_config})
+        exp_runner = load_checkpoint(cls,directories['results'],extra_configs={k:config[k] for k in non_picklable_config})
+        if modifiable:
+            exp_runner.max_iterations = max_iterations
+        return exp_runner
     else:
         return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,slurm_split=slurm_split,config=config,non_picklable_config=non_picklable_config)
 

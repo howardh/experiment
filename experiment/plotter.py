@@ -219,6 +219,9 @@ def plot(logger : Logger,
 def stacked_area_plot(logger : Logger,
         key : str,
         filename : str = None,
+        xlabel : str = None,
+        ylabel : str = None,
+        title : str = None,
         normalize : bool = True,
         ax : matplotlib.axes.Axes = None):
     if ax is None and filename is None:
@@ -238,6 +241,9 @@ def stacked_area_plot(logger : Logger,
 
     plt.stackplot(data_x, *data_y.transpose())
 
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     if fig is not None:
         fig.savefig(filename)
         plt.close()
