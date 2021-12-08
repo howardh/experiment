@@ -178,7 +178,7 @@ def plot(logger : Logger,
                 for c in b:
                     scatter_x.append(a)
                     scatter_y.append(c)
-            ax.scatter(scatter_x,scatter_y,c=colour[colour_index],alpha=0.3)
+            ax.scatter(scatter_x,scatter_y,c=colour[colour_index],alpha=0.1)
         # Aggregate
         if aggregate == 'mean':
             y = [float(np.mean(v)) for v in y_raw]

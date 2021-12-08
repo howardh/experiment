@@ -271,3 +271,10 @@ class SubLogger(BaseLogger):
     def append(self, **data):
         prefixed_data = {f'{self.prefix}{k}':v for k,v in data.items()}
         self.parent_logger.append(**prefixed_data)
+
+    def state_dict(self):
+        return {
+            'prefix': self.prefix,
+        }
+    def load_state_dict(self, state):
+        self.prefix = state['prefix']

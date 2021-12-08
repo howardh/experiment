@@ -166,6 +166,7 @@ class ExperimentRunner(Generic[ExpType]):
         return step_range
     @property
     def _terminate_on_step(self):
+        # FIXME: If a job in an array gets preempted, the next job will start before the the preempted job. So if array job 1 is preempted, the next job that runs will be job 2, and job 1 will just be requeued. This needs to be taken into account. Look at the current step count, and add self.max_iterations/num_tasks steps to it, rounded down to the nearest multiple of self.checkpoint_frequency.
         if not self._slurm_split:
             return None
         if self.max_iterations is None:
@@ -277,7 +278,6 @@ def make_experiment_runner(cls : Type[ExpType],
         return exp_runner
     else:
         return ExperimentRunner(cls, experiment_name=experiment_name, root_directory=root_directory,trial_id=trial_id, results_directory=results_directory, max_iterations=max_iterations, verbose=verbose, checkpoint_frequency=checkpoint_frequency,num_checkpoints=num_checkpoints,slurm_split=slurm_split,config=config,non_picklable_config=non_picklable_config)
-
 
 def load_checkpoint(cls, path, extra_configs={}):
     """
