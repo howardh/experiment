@@ -125,6 +125,7 @@ class ExperimentRunner(Generic[ExpType]):
         self.num_checkpoints = num_checkpoints
         self._slurm_split = slurm_split
         self._non_picklable_config = non_picklable_config
+        self._ignore_next_checkpoint = False # This is set to True after loading a checkpoint. This is to prevent it from wasting resources by saving the checkpoint immediately after loading it.
 
         directories = get_experiment_directories(
                 root_directory=self._root_directory,
@@ -174,7 +175,7 @@ class ExperimentRunner(Generic[ExpType]):
         if self.checkpoint_frequency is None:
             raise Exception('Cannot split the experiment. Checkpointing must be enabled by giving a value to `checkpoint_frequency`.')
         try:
-            task_id = int(os.environ['SLURM_ARRAY_TASK_ID'])
+            #task_id = int(os.environ['SLURM_ARRAY_TASK_ID'])
             task_min = int(os.environ['SLURM_ARRAY_TASK_MIN'])
             task_max = int(os.environ['SLURM_ARRAY_TASK_MAX'])
         except KeyError:
@@ -182,8 +183,9 @@ class ExperimentRunner(Generic[ExpType]):
         num_tasks = task_max-task_min+1
         num_epochs = self.max_iterations/self.checkpoint_frequency
         epochs_per_task = np.ceil(num_epochs/num_tasks)
-        task_index = task_id-task_min
-        return (task_index+1)*epochs_per_task*self.checkpoint_frequency
+        return self._steps + epochs_per_task*self.checkpoint_frequency # FIXME: Temporary fix. Doesn't work if _terminate_on_step is called after the start of the experiment.
+        #task_index = task_id-task_min
+        #return (task_index+1)*epochs_per_task*self.checkpoint_frequency
     @property
     def exp(self): return self._exp
     @property
@@ -199,7 +201,10 @@ class ExperimentRunner(Generic[ExpType]):
         for steps in step_range:
             self._steps = steps
             if self.checkpoint_frequency is not None and steps % self.checkpoint_frequency == 0:
-                self.save_checkpoint(self._checkpoint_file_path)
+                if self._ignore_next_checkpoint:
+                    self._ignore_next_checkpoint = False
+                else:
+                    self.save_checkpoint(self._checkpoint_file_path)
             if terminate_on_step is not None and steps >= terminate_on_step:
                 break
             self._exp.run_step(steps)
@@ -320,4 +325,5 @@ def load_checkpoint(cls, path, extra_configs={}):
     }
     exp = ExperimentRunner(cls, **args) # cls needs to be passed as a positional argument, otherwise it fails in python 3.7. See https://stackoverflow.com/questions/62235830/why-is-the-cls-keyword-attribute-reserved-when-using-typing-generic-in-python
     exp.load_state_dict(state)
+    exp._ignore_next_checkpoint = True
     return exp
