@@ -9,9 +9,10 @@ import os
 import matplotlib
 try:
     matplotlib.use('TkAgg')
+    from matplotlib import pyplot as plt
 except:
     matplotlib.use('Agg')
-from matplotlib import pyplot as plt
+    from matplotlib import pyplot as plt
 import numpy as np
 import dill
 import skopt
