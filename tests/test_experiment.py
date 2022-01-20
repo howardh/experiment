@@ -256,7 +256,8 @@ def test_slurm_split_task_1_and_1(tmpdir):
     exp_runner1.run()
     assert len(exp_runner1.exp.logger) == 5
 
-    # Run the first task again. It should load the previous results and do nothing.
+    # Run the second task. It should load the previous results and continue the experiment.
+    os.environ['SLURM_ARRAY_TASK_ID'] = '2'
     exp_runner2 = make_experiment_runner(
             DummyExp,
             trial_id='dummy',
@@ -267,14 +268,14 @@ def test_slurm_split_task_1_and_1(tmpdir):
             config={}
     )
 
+    # Make sure it's loaded properly
     assert len(exp_runner1.exp.logger) == len(exp_runner2.exp.logger)
     for (a,b) in zip(exp_runner1.exp.logger,exp_runner2.exp.logger):
         assert a == b
 
     exp_runner2.run()
 
-    assert len(exp_runner1.exp.logger) == len(exp_runner2.exp.logger)
+    assert len(exp_runner1.exp.logger) == 5
+    assert len(exp_runner2.exp.logger) == 10
     for (a,b) in zip(exp_runner1.exp.logger,exp_runner2.exp.logger):
         assert a == b
-
-
