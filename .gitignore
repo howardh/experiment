@@ -7,3 +7,4 @@ htmlcov
 Session.vim
 wandb
 .coverage.*
+.python-version

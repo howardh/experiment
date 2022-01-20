@@ -1,4 +1,8 @@
 import pytest
+import subprocess
+import textwrap
+
+import dill
 
 from experiment.logger import Logger
 
@@ -115,11 +119,17 @@ def test_index_by_string_no_key():
     logger.log(train_score=2)
     logger.log(train_score=3)
 
-    x,y = logger['train_score']
+    output = logger['train_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
     assert y == [1,2,3,1,2,3]
     assert x == [0,1,2,3,4,5]
 
-    x,y = logger['val_score']
+    output = logger['val_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
     assert y == [2,3]
     assert x == [0,3]
 
@@ -132,10 +142,108 @@ def test_index_by_string_with_key():
     logger.log(iteration=7,train_score=2)
     logger.log(iteration=8,train_score=3)
 
-    x,y = logger['train_score']
+    output = logger['train_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
     assert y == [1,2,3,1,2,3]
     assert x == [3,4,5,6,7,8]
 
-    x,y = logger['val_score']
+    output = logger['val_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
     assert y == [2,3]
     assert x == [3,6]
+
+def test_with_file_backed_data(tmpdir):
+    # Create a logger with a file-backed data store in a separate process
+    code = textwrap.dedent(f"""
+        import os
+        import experiment.logger
+        import dill
+
+        logger = experiment.logger.Logger(
+            key_name='iteration',
+            in_memory=False,
+            filename=os.path.join('{tmpdir}','data.pkl'),
+            max_file_length=3)
+        logger.log(iteration=3,train_score=1, val_score=2)
+        logger.log(iteration=4,train_score=2)
+        logger.log(iteration=5,train_score=3)
+        logger.log(iteration=6,train_score=1, val_score=3)
+        logger.log(iteration=7,train_score=2)
+        logger.log(iteration=8,train_score=3)
+
+        with open(os.path.join('{tmpdir}','state.pkl'), 'wb') as f:
+            logger = dill.dump(logger.state_dict(), f)
+    """)
+    output = subprocess.run(['python','-c',code], capture_output=True)
+    if output.returncode != 0:
+        raise Exception(output.stderr.decode('utf-8'))
+
+    # Load the logger from file
+    logger = Logger()
+    with open(tmpdir.join('state.pkl'), 'rb') as f:
+        logger.load_state_dict(dill.load(f))
+
+    output = logger['train_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
+    assert y == [1,2,3,1,2,3]
+    assert x == [3,4,5,6,7,8]
+
+    output = logger['val_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
+    assert y == [2,3]
+    assert x == [3,6]
+
+def test_with_file_backed_data_2(tmpdir):
+    # Create a logger with a file-backed data store in a separate process
+    code = textwrap.dedent(f"""
+        import os
+        import experiment.logger
+        import dill
+
+        logger = experiment.logger.Logger(
+            key_name='iteration',
+            in_memory=False,
+            filename=os.path.join('{tmpdir}','data.pkl'),
+            max_file_length=3)
+        logger.log(iteration=3,train_score=1, val_score=2)
+        logger.log(iteration=4,train_score=2)
+        logger.log(iteration=5,train_score=3)
+        logger.log(iteration=6,train_score=4)
+        logger.log(iteration=7,train_score=1, val_score=3)
+        logger.log(iteration=8,train_score=2)
+        logger.log(iteration=9,train_score=3)
+        logger.log(iteration=10,train_score=4)
+
+        with open(os.path.join('{tmpdir}','state.pkl'), 'wb') as f:
+            logger = dill.dump(logger.state_dict(), f)
+    """)
+    output = subprocess.run(['python','-c',code], capture_output=True)
+    if output.returncode != 0:
+        raise Exception(output.stderr.decode('utf-8'))
+
+    # Load the logger from file
+    logger = Logger()
+    with open(tmpdir.join('state.pkl'), 'rb') as f:
+        logger.load_state_dict(dill.load(f))
+
+    output = logger['train_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
+    assert y == [1,2,3,4,1,2,3,4]
+    assert x == [3,4,5,6,7,8,9,10]
+
+    output = logger['val_score']
+    assert output is not None
+    assert len(output) == 2
+    x,y = output
+    assert y == [2,3]
+    assert x == [3,7]
